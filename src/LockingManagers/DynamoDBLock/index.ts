@@ -20,7 +20,7 @@ import { isLockExpired } from "../utils";
  * @implements {ILockingManager}
  */
 export class DynamoDBLock implements ILockingManager {
-  private client: DynamoDBClient;
+  private readonly client: DynamoDBClient;
 
   /**
    * Creates an instance of DynamoDBLock.
@@ -29,9 +29,9 @@ export class DynamoDBLock implements ILockingManager {
    * @param [primaryKey='path_key'] - The name of the primary key column in the DynamoDB table.
    */
   constructor(
-    public tableName: string,
-    private credentials: AWSCredentials,
-    public primaryKey: string = 'path_key',
+    public readonly tableName: string,
+    private readonly credentials: AWSCredentials,
+    public readonly primaryKey: string = 'path_key',
   ) {
     this.client = new DynamoDBClient({
       region: credentials.awsRegion ?? 'ap-southeast-2',
@@ -211,7 +211,6 @@ export class DynamoDBLock implements ILockingManager {
         return false;
       }
 
-      const now = new Date();
       const newExpiresAt = new Date(existingLock.expiresAt.getTime() + duration);
 
       try {
