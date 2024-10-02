@@ -1,5 +1,6 @@
 import { trace, Span } from '@opentelemetry/api';
 import { LockInfo } from '../types';
+import { setSpanAttributes } from '../../OpenTelemetry';
 
 /**
  * Checks if a lock has expired based on its expiration time.
@@ -55,10 +56,5 @@ export function isLockExpired(lock: LockInfo): boolean {
  *   detailed information about lock acquisition operations.
  */
 export const setSpanLockAcquiredStatus = (status: boolean): void => {
-  const activeSpan: Span | undefined = trace.getActiveSpan();
-  if (activeSpan) {
-    activeSpan.setAttributes({
-      'lock.acquire.success': status,
-    });
-  }
+  setSpanAttributes({'lock.acquire.success': status})
 };
