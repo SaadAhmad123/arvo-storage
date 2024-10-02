@@ -40,7 +40,7 @@ export interface LockResult {
   /**
    * The expiration time of the lock, if successful.
    */
-  expiresAt?: Date;
+  expiresAt?: string;
 
   /**
    * Error message if the lock acquisition failed.
@@ -60,12 +60,12 @@ export interface LockInfo {
   /**
    * When the lock was acquired.
    */
-  acquiredAt: Date;
+  acquiredAt: string;
 
   /**
    * When the lock will expire.
    */
-  expiresAt: Date;
+  expiresAt: string;
 
   /**
    * Any metadata associated with the lock.
@@ -188,13 +188,4 @@ export interface ILockingManager {
    * ```
    */
   isLocked(path: string): Promise<boolean>;
-
-  /**
-   * Lists all currently held locks.
-   *
-   * @param prefix - Optional prefix to filter locks by path.
-   * @returns A promise resolving to an array of LockInfo objects.
-   * @throws {Error} If the lock manager is not available or malfunctioning.
-   */
-  listLocks(prefix?: string): Promise<LockInfo[]>;
 }

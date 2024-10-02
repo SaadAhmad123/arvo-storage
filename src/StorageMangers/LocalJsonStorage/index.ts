@@ -29,9 +29,9 @@ import { ArvoStorageTracer, exceptionToSpan } from '../../OpenTelemetry';
  * const user = await storage.read('users/123', null);
  * ```
  */
-export class LocalJsonStorage<
-  TDataSchema extends z.ZodObject<any, any, any>
-> implements IStorageManager<TDataSchema> {
+export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
+  implements IStorageManager<TDataSchema>
+{
   private filePath: string;
   private data: Record<string, unknown> = {};
   public readonly schema: TDataSchema;
@@ -78,7 +78,9 @@ export class LocalJsonStorage<
     action: () => Promise<T>,
     attributes: Record<string, any> = {},
   ): Promise<T> {
-    const span = ArvoStorageTracer.startSpan(`LocalJsonStorage.${operation}`, { attributes });
+    const span = ArvoStorageTracer.startSpan(`LocalJsonStorage.${operation}`, {
+      attributes,
+    });
 
     try {
       const result = await context.with(
@@ -107,30 +109,59 @@ export class LocalJsonStorage<
    * @throws {Error} If the file cannot be read or parsed.
    */
   private async initialize(): Promise<void> {
-    return this.executeTraced('initialize', async () => {
-      try {
-        const fileContent = await fs.readFile(this.filePath, 'utf-8');
-        this.data = JSON.parse(fileContent);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          await this.saveToFile();
-        } else {
-          throw new Error(`Failed to initialize storage: ${(error as Error).message}`);
+    return this.executeTraced(
+      'initialize',
+      async () => {
+        try {
+          const fileContent = await fs.readFile(this.filePath, 'utf-8');
+          this.data = JSON.parse(fileContent);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            await this.saveToFile();
+          } else {
+            throw new Error(
+              `Failed to initialize storage: ${(error as Error).message}`,
+            );
+          }
         }
-      }
-    }, { 'file.path': this.filePath });
+      },
+      { 'file.path': this.filePath },
+    );
   }
 
   /**
-   * Saves the current data to the JSON file.
-   *
+   * Saves the current locks to the JSON file, creating the directory if it doesn't exist.
    * @private
-   * @throws {Error} If the file cannot be written.
+   * @returns {Promise<void>}
+   * @throws {Error} If saving the locks fails.
    */
   private async saveToFile(): Promise<void> {
-    return this.executeTraced('saveToFile', async () => {
-      await fs.writeFile(this.filePath, JSON.stringify(this.data, null, 2), 'utf-8');
-    }, { 'file.path': this.filePath });
+    return this.executeTraced(
+      'saveToFile',
+      async () => {
+        const directory = path.dirname(this.filePath);
+
+        try {
+          // Create the directory if it doesn't exist
+          await fs.mkdir(directory, { recursive: true });
+        } catch (error) {
+          // Ignore the error if the directory already exists
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+            throw new Error(
+              `Failed to create directory: ${(error as Error).message}`,
+            );
+          }
+        }
+
+        // Write the locks to the file
+        await fs.writeFile(
+          this.filePath,
+          JSON.stringify(this.data, null, 2),
+          'utf-8',
+        );
+      },
+      { 'file.path': this.filePath },
+    );
   }
 
   /**
@@ -147,12 +178,16 @@ export class LocalJsonStorage<
    * ```
    */
   async write(data: z.infer<TDataSchema>, path: string): Promise<void> {
-    return this.executeTraced('write', async () => {
-      await this.initialize();
-      const validated = this.schema.parse(data);
-      this.data[path] = validated;
-      await this.saveToFile();
-    }, { path, 'data.size': JSON.stringify(data).length });
+    return this.executeTraced(
+      'write',
+      async () => {
+        await this.initialize();
+        const validated = this.schema.parse(data);
+        this.data[path] = validated;
+        await this.saveToFile();
+      },
+      { path, 'data.size': JSON.stringify(data).length },
+    );
   }
 
   /**
@@ -172,15 +207,22 @@ export class LocalJsonStorage<
    * }
    * ```
    */
-  async read(path: string, defaultValue: z.infer<TDataSchema> | null): Promise<z.infer<TDataSchema> | null> {
-    return this.executeTraced('read', async () => {
-      await this.initialize();
-      const storedData = this.data[path];
-      if (storedData === undefined) {
-        return defaultValue;
-      }
-      return this.schema.parse(storedData);
-    }, { path, 'default_value_used': defaultValue !== null });
+  async read(
+    path: string,
+    defaultValue: z.infer<TDataSchema> | null,
+  ): Promise<z.infer<TDataSchema> | null> {
+    return this.executeTraced(
+      'read',
+      async () => {
+        await this.initialize();
+        const storedData = this.data[path];
+        if (storedData === undefined) {
+          return defaultValue;
+        }
+        return this.schema.parse(storedData);
+      },
+      { path, default_value_used: defaultValue !== null },
+    );
   }
 
   /**
@@ -197,11 +239,15 @@ export class LocalJsonStorage<
    * ```
    */
   async list(start: number, count: number): Promise<string[]> {
-    return this.executeTraced('list', async () => {
-      await this.initialize();
-      const keys = Object.keys(this.data);
-      return keys.slice(start, start + count);
-    }, { start, count });
+    return this.executeTraced(
+      'list',
+      async () => {
+        await this.initialize();
+        const keys = Object.keys(this.data);
+        return keys.slice(start, start + count);
+      },
+      { start, count },
+    );
   }
 
   /**
@@ -235,11 +281,15 @@ export class LocalJsonStorage<
    * ```
    */
   async delete(path: string): Promise<void> {
-    return this.executeTraced('delete', async () => {
-      await this.initialize();
-      delete this.data[path];
-      await this.saveToFile();
-    }, { path });
+    return this.executeTraced(
+      'delete',
+      async () => {
+        await this.initialize();
+        delete this.data[path];
+        await this.saveToFile();
+      },
+      { path },
+    );
   }
 
   /**
@@ -258,9 +308,13 @@ export class LocalJsonStorage<
    * ```
    */
   async exists(path: string): Promise<boolean> {
-    return this.executeTraced('exists', async () => {
-      await this.initialize();
-      return path in this.data;
-    }, { path });
+    return this.executeTraced(
+      'exists',
+      async () => {
+        await this.initialize();
+        return path in this.data;
+      },
+      { path },
+    );
   }
 }

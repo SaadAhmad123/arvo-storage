@@ -6,3 +6,4 @@ coverage
 .yarnrc.yml
 .npmrc
 utils.newrelic.ts
+.test_files
