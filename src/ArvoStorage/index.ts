@@ -1,6 +1,5 @@
-import { ArvoXStateTracer } from '../OpenTelemetry';
+import { ArvoStorageTracer, exceptionToSpan } from '../OpenTelemetry';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { exceptionToSpan } from 'arvo-core';
 import { z } from 'zod';
 import { IArvoStorage, ILockingManager, IStorageManager } from './types';
 
@@ -49,7 +48,7 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
     path: string,
     __default: z.infer<TDataSchema> | null = null,
   ): Promise<z.infer<TDataSchema> | null> {
-    return await ArvoXStateTracer.startActiveSpan(
+    return await ArvoStorageTracer.startActiveSpan(
       'ArvoStorage.read',
       async (span) => {
         span.setAttributes({
@@ -91,7 +90,7 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    * @returns A promise that resolves when the write operation is complete.
    */
   async write(data: z.infer<TDataSchema>, path: string): Promise<void> {
-    return await ArvoXStateTracer.startActiveSpan(
+    return await ArvoStorageTracer.startActiveSpan(
       'ArvoStorage.write',
       async (span) => {
         span.setAttributes({
@@ -130,7 +129,7 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    * @throws Error if the storageManager encounters an issue during deletion.
    */
   async delete(path: string): Promise<void> {
-    return await ArvoXStateTracer.startActiveSpan(
+    return await ArvoStorageTracer.startActiveSpan(
       'ArvoStorage.delete',
       async (span) => {
         span.setAttributes({
@@ -165,7 +164,7 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    * @throws Error if the storageManager encounters an issue during the check.
    */
   async exists(path: string): Promise<boolean> {
-    return await ArvoXStateTracer.startActiveSpan(
+    return await ArvoStorageTracer.startActiveSpan(
       'ArvoStorage.exists',
       async (span) => {
         span.setAttributes({
@@ -202,7 +201,7 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    * @throws Error if the lockingManager is not defined or an error is thrown during execution.
    */
   async acquireLock(path: string): Promise<boolean> {
-    return await ArvoXStateTracer.startActiveSpan(
+    return await ArvoStorageTracer.startActiveSpan(
       'ArvoStorage.acquireLock',
       async (span) => {
         span.setAttributes({
@@ -243,7 +242,7 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    * @throws Error if the lockingManager is not defined or an error is thrown during execution.
    */
   async releaseLock(path: string): Promise<boolean> {
-    return await ArvoXStateTracer.startActiveSpan(
+    return await ArvoStorageTracer.startActiveSpan(
       'ArvoStorage.releaseLock',
       async (span) => {
         span.setAttributes({
@@ -285,7 +284,7 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    */
   async isLocked(path: string): Promise<boolean> {
 
-    return await ArvoXStateTracer.startActiveSpan(
+    return await ArvoStorageTracer.startActiveSpan(
       'ArvoStorage.isLocked',
       async (span) => {
         span.setAttributes({
