@@ -1,17 +1,22 @@
-import { DynamoDBClient, PutItemCommand, GetItemCommand, DeleteItemCommand, UpdateItemCommand } from "@aws-sdk/client-dynamodb";
-import { marshall, unmarshall } from "@aws-sdk/util-dynamodb";
-import { v4 as uuidv4 } from 'uuid';
 import {
-  ILockingManager,
-  LockOptions,
-  LockResult,
-  LockInfo
-} from '../types';
+  DynamoDBClient,
+  PutItemCommand,
+  GetItemCommand,
+  DeleteItemCommand,
+  UpdateItemCommand,
+} from '@aws-sdk/client-dynamodb';
+import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
+import { v4 as uuidv4 } from 'uuid';
+import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
 import { AWSCredentials } from '../../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
-import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
-import { dateToUnixTimestampInSeconds, delay, unixTimestampInSecondsToDate } from "../../utils";
-import { isLockExpired, setSpanLockAcquiredStatus } from "../utils";
+import { ArvoStorageTracer, logToSpan, setSpanAttributes } from '../../OpenTelemetry';
+import {
+  dateToUnixTimestampInSeconds,
+  delay,
+  unixTimestampInSecondsToDate,
+} from '../../utils';
+import { isLockExpired, setSpanLockAcquiredStatus } from '../utils';
 
 /**
  * Implements a distributed locking mechanism using AWS DynamoDB with OpenTelemetry instrumentation.
@@ -36,10 +41,16 @@ export class DynamoDBLock implements ILockingManager {
     this.client = new DynamoDBClient({
       region: credentials.awsRegion ?? 'ap-southeast-2',
       credentials: {
-        ...(credentials.awsAccessKey ? { accessKeyId: credentials.awsAccessKey } : {}),
-        ...(credentials.awsSecretKey ? { secretAccessKey: credentials.awsSecretKey } : {}),
-        ...(credentials.awsSessionToken ? { sessionToken: credentials.awsSessionToken } : {}),
-      } as any
+        ...(credentials.awsAccessKey
+          ? { accessKeyId: credentials.awsAccessKey }
+          : {}),
+        ...(credentials.awsSecretKey
+          ? { secretAccessKey: credentials.awsSecretKey }
+          : {}),
+        ...(credentials.awsSessionToken
+          ? { sessionToken: credentials.awsSessionToken }
+          : {}),
+      } as any,
     });
     this.tableName = tableName;
   }
@@ -59,9 +70,16 @@ export class DynamoDBLock implements ILockingManager {
     action: () => Promise<T>,
     attributes: Record<string, any> = {},
   ): Promise<T> {
-    const span = ArvoStorageTracer.startSpan(`DynamoDBLockManager.${operation}`, {
-      attributes: { ...attributes, 'db.type': 'dynamodb', 'db.name': this.tableName },
-    });
+    const span = ArvoStorageTracer.startSpan(
+      `DynamoDBLockManager.${operation}`,
+      {
+        attributes: {
+          ...attributes,
+          'db.type': 'dynamodb',
+          'db.name': this.tableName,
+        },
+      },
+    );
 
     try {
       const result = await context.with(
@@ -88,36 +106,55 @@ export class DynamoDBLock implements ILockingManager {
    * @param {LockOptions} [options={}] - Options for acquiring the lock.
    * @returns {Promise<LockResult>} A promise resolving to the result of the lock acquisition attempt.
    */
-  async acquireLock(path: string, options: LockOptions = {}): Promise<LockResult> {
+  async acquireLock(
+    path: string,
+    options: LockOptions = {},
+  ): Promise<LockResult> {
     const {
       timeout = 30000,
       retries = 2,
       retryDelay = 1000,
-      metadata = {}
+      metadata = {},
     } = options;
-    return this.executeTraced('acquireLock', async () => {
-      for (let attempt = 0; attempt <= retries; attempt++) {
-        logToSpan({
-          level: 'INFO',
-          message: `[DynamoDBLockManager][acquireLock] -> attempt ${attempt + 1}/${retries + 1}`
-        });
+    return this.executeTraced(
+      'acquireLock',
+      async () => {
+        for (let attempt = 0; attempt <= retries; attempt++) {
+          logToSpan({
+            level: 'INFO',
+            message: `[DynamoDBLockManager][acquireLock] -> attempt ${attempt + 1}/${retries + 1}`,
+          });
 
-        const result = await this.tryAcquireLock(path, timeout, metadata);
-        if (result.success) {
-          setSpanLockAcquiredStatus(true)
-          return result;
-        }
+          const result = await this.tryAcquireLock(path, timeout, metadata);
+          if (result.success) {
+            setSpanLockAcquiredStatus(true);
+            return result;
+          }
 
-        if (attempt < retries) {
-          await delay(retryDelay);
+          if (attempt < retries) {
+            await delay(retryDelay);
+          }
         }
-      }
-      setSpanLockAcquiredStatus(false)
-      return { success: false, error: 'Failed to acquire lock after retries' };
-    }, { 'lock.path': path, 'lock.timeout': options.timeout, 'lock.retries': options.retries, 'lock.retries.delay': options.retryDelay });
+        setSpanLockAcquiredStatus(false);
+        return {
+          success: false,
+          error: 'Failed to acquire lock after retries',
+        };
+      },
+      {
+        'lock.path': path,
+        'lock.timeout': options.timeout,
+        'lock.retries': options.retries,
+        'lock.retries.delay': options.retryDelay,
+      },
+    );
   }
 
-  private async tryAcquireLock(path: string, timeout: number, metadata: Record<string, any>): Promise<LockResult> {
+  private async tryAcquireLock(
+    path: string,
+    timeout: number,
+    metadata: Record<string, any>,
+  ): Promise<LockResult> {
     if (await this.getLockInfo(path)) {
       return { success: false };
     }
@@ -137,18 +174,26 @@ export class DynamoDBLock implements ILockingManager {
     }
   }
 
-  private async putLockItem(path: string, lockId: string, acquiredAt: Date, expiresAt: Date, metadata: Record<string, any>): Promise<void> {
-    await this.client.send(new PutItemCommand({
-      TableName: this.tableName,
-      Item: marshall({
-        [this.primaryKey]: path,
-        lockId,
-        acquiredAt: dateToUnixTimestampInSeconds(acquiredAt),
-        expiresAt: dateToUnixTimestampInSeconds(expiresAt),
-        metadata
+  private async putLockItem(
+    path: string,
+    lockId: string,
+    acquiredAt: Date,
+    expiresAt: Date,
+    metadata: Record<string, any>,
+  ): Promise<void> {
+    await this.client.send(
+      new PutItemCommand({
+        TableName: this.tableName,
+        Item: marshall({
+          [this.primaryKey]: path,
+          lockId,
+          acquiredAt: dateToUnixTimestampInSeconds(acquiredAt),
+          expiresAt: dateToUnixTimestampInSeconds(expiresAt),
+          metadata,
+        }),
+        ConditionExpression: `attribute_not_exists(${this.primaryKey})`,
       }),
-      ConditionExpression: `attribute_not_exists(${this.primaryKey})`
-    }));
+    );
   }
 
   private isConditionalCheckFailedException(error: any): boolean {
@@ -162,27 +207,34 @@ export class DynamoDBLock implements ILockingManager {
    * @returns {Promise<boolean>} A promise resolving to true if the lock was successfully released, false otherwise.
    */
   async releaseLock(path: string, lockId?: string): Promise<boolean> {
-    return this.executeTraced('releaseLock', async () => {
-      const params: any = {
-        TableName: this.tableName,
-        Key: marshall({ [this.primaryKey]: path }),
-      };
+    return this.executeTraced(
+      'releaseLock',
+      async () => {
+        const params: any = {
+          TableName: this.tableName,
+          Key: marshall({ [this.primaryKey]: path }),
+        };
 
-      if (lockId) {
-        params.ConditionExpression = 'lockId = :lockId';
-        params.ExpressionAttributeValues = marshall({ ':lockId': lockId });
-      }
-
-      try {
-        await this.client.send(new DeleteItemCommand(params));
-        return true;
-      } catch (error) {
-        if ((error as any).name === 'ConditionalCheckFailedException') {
-          return false;
+        if (lockId) {
+          params.ConditionExpression = 'lockId = :lockId';
+          params.ExpressionAttributeValues = marshall({ ':lockId': lockId });
         }
-        throw error;
-      }
-    }, { 'lock.path': path });
+        
+        try {
+          await this.client.send(new DeleteItemCommand(params));
+          setSpanAttributes({'lock.release.success': true})
+          return true;
+        } catch (error) {
+          setSpanAttributes({'lock.release.success': false})
+          if ((error as any).name === 'ConditionalCheckFailedException') {
+            return false
+          } else {
+            throw error;
+          }
+        }
+      },
+      { 'lock.path': path },
+    );
   }
 
   /**
@@ -191,13 +243,26 @@ export class DynamoDBLock implements ILockingManager {
    * @returns {Promise<boolean>} A promise resolving to true if a lock was present and released.
    */
   async forceReleaseLock(path: string): Promise<boolean> {
-    return this.executeTraced('forceReleaseLock', async () => {
-      await this.client.send(new DeleteItemCommand({
-        TableName: this.tableName,
-        Key: marshall({ [this.primaryKey]: path })
-      }));
-      return true;
-    }, { 'lock.path': path });
+    return this.executeTraced(
+      'forceReleaseLock',
+      async () => {
+        try {
+          await this.client.send(
+            new DeleteItemCommand({
+              TableName: this.tableName,
+              Key: marshall({ [this.primaryKey]: path }),
+            }),
+          );
+          setSpanAttributes({'lock.release.force.success': true})
+          return true;
+        }
+        catch (e) {
+          setSpanAttributes({'lock.release.force.success': false})
+          throw e
+        }
+      },
+      { 'lock.path': path },
+    );
   }
 
   /**
@@ -207,75 +272,102 @@ export class DynamoDBLock implements ILockingManager {
    * @param {number} duration - The additional time in milliseconds to extend the lock by.
    * @returns {Promise<boolean>} A promise resolving to true if the lock was successfully extended, false otherwise.
    */
-  async extendLock(path: string, lockId: string, duration: number): Promise<boolean> {
-    return this.executeTraced('extendLock', async () => {
-      // First, get the existing lock info
-      const existingLock = await this.getLockInfo(path);
+  async extendLock(
+    path: string,
+    lockId: string,
+    duration: number,
+  ): Promise<boolean> {
+    return this.executeTraced(
+      'extendLock',
+      async () => {
+        // First, get the existing lock info
+        const existingLock = await this.getLockInfo(path);
 
-      // If the lock doesn't exist or doesn't match the provided lockId or lock has expired, return false
-      if (!existingLock || existingLock.lockId !== lockId || isLockExpired(existingLock)) {
-        return false;
-      }
-
-      const newExpiresAt = new Date(existingLock.expiresAt.getTime() + duration);
-
-      try {
-        await this.client.send(new UpdateItemCommand({
-          TableName: this.tableName,
-          Key: marshall({ [this.primaryKey]: path }),
-          UpdateExpression: 'SET expiresAt = :newExpiresAt',
-          ConditionExpression: 'lockId = :lockId AND expiresAt = :currentExpiresAt',
-          ExpressionAttributeValues: marshall({
-            ':newExpiresAt': dateToUnixTimestampInSeconds(newExpiresAt),
-            ':lockId': lockId,
-            ':currentExpiresAt': dateToUnixTimestampInSeconds(existingLock.expiresAt)
-          })
-        }));
-        return true;
-      } catch (error) {
-        if ((error as any).name === 'ConditionalCheckFailedException') {
-          // The lock was modified or released between our check and update
+        // If the lock doesn't exist or doesn't match the provided lockId or lock has expired, return false
+        if (
+          !existingLock ||
+          existingLock.lockId !== lockId ||
+          isLockExpired(existingLock)
+        ) {
           return false;
         }
-        throw error;
-      }
-    }, { 'lock.path': path, 'lock.timeout.extension': duration });
+
+        const newExpiresAt = new Date(
+          existingLock.expiresAt.getTime() + duration,
+        );
+
+        try {
+          await this.client.send(
+            new UpdateItemCommand({
+              TableName: this.tableName,
+              Key: marshall({ [this.primaryKey]: path }),
+              UpdateExpression: 'SET expiresAt = :newExpiresAt',
+              ConditionExpression:
+                'lockId = :lockId AND expiresAt = :currentExpiresAt',
+              ExpressionAttributeValues: marshall({
+                ':newExpiresAt': dateToUnixTimestampInSeconds(newExpiresAt),
+                ':lockId': lockId,
+                ':currentExpiresAt': dateToUnixTimestampInSeconds(
+                  existingLock.expiresAt,
+                ),
+              }),
+            }),
+          );
+          setSpanAttributes({'lock.timeout.extension.success': true})
+          return true;
+        } catch (error) {
+          setSpanAttributes({'lock.timeout.extension.success': true})
+          if ((error as any).name === 'ConditionalCheckFailedException') {
+            // The lock was modified or released between our check and update
+            return false;
+          }
+          throw error;
+        }
+      },
+      { 'lock.path': path, 'lock.timeout.extension': duration },
+    );
   }
 
   /**
    * Retrieves information about a lock on a given path.
    * If an expired lock is found, it will be forcibly deleted and null will be returned.
-   * 
+   *
    * @param {string} path - The path to get lock information for.
    * @returns {Promise<LockInfo | null>} A promise resolving to the lock information if a valid lock exists, null otherwise.
    */
   async getLockInfo(path: string): Promise<LockInfo | null> {
-    return this.executeTraced('getLockInfo', async () => {
-      const result = await this.client.send(new GetItemCommand({
-        TableName: this.tableName,
-        Key: marshall({ [this.primaryKey]: path })
-      }));
+    return this.executeTraced(
+      'getLockInfo',
+      async () => {
+        const result = await this.client.send(
+          new GetItemCommand({
+            TableName: this.tableName,
+            Key: marshall({ [this.primaryKey]: path }),
+          }),
+        );
 
-      if (!result.Item) {
-        return null;
-      }
+        if (!result.Item) {
+          return null;
+        }
 
-      const data = unmarshall(result.Item);
-      const item: LockInfo = {
-        lockId: data["lockId"],
-        acquiredAt: unixTimestampInSecondsToDate(data["acquiredAt"]),
-        expiresAt: unixTimestampInSecondsToDate(data["expiresAt"]),
-        metadata: data["metadata"]
-      }
+        const data = unmarshall(result.Item);
+        const item: LockInfo = {
+          lockId: data['lockId'],
+          acquiredAt: unixTimestampInSecondsToDate(data['acquiredAt']),
+          expiresAt: unixTimestampInSecondsToDate(data['expiresAt']),
+          metadata: data['metadata'],
+        };
 
-      if (isLockExpired(item)) {
-        // Lock has expired, delete it and return null
-        await this.forceReleaseLock(path);
-        return null;
-      }
+        if (isLockExpired(item)) {
+          // Lock has expired, delete it and return null
+          await this.forceReleaseLock(path);
+          return null;
+        }
 
-      return item;
-    }, { 'lock.path': path });
+        return item;
+      },
+      { 'lock.path': path },
+    );
   }
 
   /**
@@ -284,9 +376,13 @@ export class DynamoDBLock implements ILockingManager {
    * @returns {Promise<boolean>} A promise resolving to true if the path is locked, false otherwise.
    */
   async isLocked(path: string): Promise<boolean> {
-    return this.executeTraced('isLocked', async () => {
-      const lockInfo = await this.getLockInfo(path);
-      return lockInfo !== null;
-    }, { 'lock.path': path });
+    return this.executeTraced(
+      'isLocked',
+      async () => {
+        const lockInfo = await this.getLockInfo(path);
+        return lockInfo !== null;
+      },
+      { 'lock.path': path },
+    );
   }
 }

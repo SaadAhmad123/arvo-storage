@@ -12,7 +12,6 @@ describe('LocalJsonLock', () => {
     telemetrySdkStop();
   });
 
-
   let lockManager: LocalJsonLock;
   let testFilePath: string;
 

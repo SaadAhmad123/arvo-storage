@@ -1,17 +1,17 @@
-import { trace, Span } from "@opentelemetry/api";
-import { LockInfo } from "../types";
+import { trace, Span } from '@opentelemetry/api';
+import { LockInfo } from '../types';
 
 /**
  * Checks if a lock has expired based on its expiration time.
- * 
+ *
  * This function compares the expiration time of the given lock with the current time
  * to determine if the lock has expired.
- * 
+ *
  * @param lock - The lock information to check.
  * @returns {boolean} True if the lock has expired, false otherwise.
- * 
+ *
  * @throws {TypeError} If the lock parameter is not a valid LockInfo object.
- * 
+ *
  * @example
  * const lockInfo: LockInfo = {
  *   lockId: "123",
@@ -21,7 +21,7 @@ import { LockInfo } from "../types";
  * };
  * const expired = isLockExpired(lockInfo);
  * console.log(expired); // true
- * 
+ *
  * @remarks
  * - This function considers a lock expired if its expiration time is less than or equal to the current time.
  * - The function uses the system clock, so ensure that the system time is accurate for reliable results.
@@ -36,17 +36,17 @@ export function isLockExpired(lock: LockInfo): boolean {
 
 /**
  * Sets the lock acquisition status as an attribute on the active OpenTelemetry span.
- * 
+ *
  * This function is used to record the success or failure of a lock acquisition attempt
  * in the current tracing context.
- * 
+ *
  * @param status - A boolean indicating whether the lock was successfully acquired.
- * 
+ *
  * @example
  * // After attempting to acquire a lock
  * const lockAcquired = await tryAcquireLock();
  * setSpanLockAcquiredStatus(lockAcquired);
- * 
+ *
  * @remarks
  * - This function relies on the OpenTelemetry API to access the current active span.
  * - If no active span is found, this function will silently do nothing.
@@ -58,7 +58,7 @@ export const setSpanLockAcquiredStatus = (status: boolean): void => {
   const activeSpan: Span | undefined = trace.getActiveSpan();
   if (activeSpan) {
     activeSpan.setAttributes({
-      'lock.acquired.success': status
+      'lock.acquired.success': status,
     });
   }
 };

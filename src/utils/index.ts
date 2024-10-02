@@ -1,6 +1,6 @@
 /**
  * Converts a Date object to a Unix timestamp in seconds.
- * 
+ *
  * This function takes a JavaScript Date object and converts it to the corresponding
  * Unix timestamp (number of seconds elapsed since January 1, 1970 00:00:00 UTC).
  * The result is rounded down to the nearest second.
@@ -28,7 +28,7 @@ export const dateToUnixTimestampInSeconds = (date: Date): number => {
 
 /**
  * Converts a Unix timestamp in seconds to a Date object.
- * 
+ *
  * This function takes a Unix timestamp (number of seconds elapsed since January 1, 1970 00:00:00 UTC)
  * and converts it to a JavaScript Date object.
  *
@@ -62,7 +62,7 @@ export const unixTimestampInSecondsToDate = (timestamp: number): Date => {
 
 /**
  * Creates a promise that resolves after a specified delay.
- * 
+ *
  * This utility function can be used to introduce a delay in asynchronous operations,
  * which is useful for implementing timeouts, throttling, or simulating network latency.
  *
@@ -89,5 +89,5 @@ export const delay = (ms: number): Promise<void> => {
   if (typeof ms !== 'number' || isNaN(ms) || ms < 0) {
     throw new TypeError('Delay must be a non-negative number');
   }
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 };

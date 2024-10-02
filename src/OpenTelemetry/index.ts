@@ -1,4 +1,4 @@
-import { trace, Span } from '@opentelemetry/api';
+import { trace, Span, AttributeValue } from '@opentelemetry/api';
 import { getPackageInfo } from './utils';
 import { TelemetryLogLevel } from './types';
 
@@ -57,3 +57,7 @@ export const exceptionToSpan = (
     console.error(error);
   }
 };
+
+export const setSpanAttributes = (attributes: Record<string, AttributeValue | undefined>) => {
+  trace.getActiveSpan()?.setAttributes(attributes)
+}

@@ -14,10 +14,13 @@ import { isLockExpired, setSpanLockAcquiredStatus } from '../utils';
  */
 export class LocalJsonLock implements ILockingManager {
   private readonly filePath: string;
-  private locks: Record<string, Omit<LockInfo, 'acquiredAt' | 'expiresAt'> & {
-    acquiredAt: string;
-    expiresAt: string;
-  }> = {};
+  private locks: Record<
+    string,
+    Omit<LockInfo, 'acquiredAt' | 'expiresAt'> & {
+      acquiredAt: string;
+      expiresAt: string;
+    }
+  > = {};
 
   /**
    * Creates an instance of LocalJsonLock.
@@ -140,11 +143,14 @@ export class LocalJsonLock implements ILockingManager {
       async () => {
         await this.initialize();
         const lock = this.locks[path];
-        return lock !== undefined && !isLockExpired({
-          ...lock,
-          acquiredAt: new Date(lock.acquiredAt),
-          expiresAt: new Date(lock.expiresAt),
-        });
+        return (
+          lock !== undefined &&
+          !isLockExpired({
+            ...lock,
+            acquiredAt: new Date(lock.acquiredAt),
+            expiresAt: new Date(lock.expiresAt),
+          })
+        );
       },
       { lock_key: path },
     );
@@ -173,8 +179,8 @@ export class LocalJsonLock implements ILockingManager {
         for (let attempt = 0; attempt <= retries; attempt++) {
           logToSpan({
             level: 'INFO',
-            message: `[LocalJsonLock][acquireLock] -> attempt ${attempt + 1}/${retries + 1}`
-          })
+            message: `[LocalJsonLock][acquireLock] -> attempt ${attempt + 1}/${retries + 1}`,
+          });
           if (!(await this.isLocked(path))) {
             const lockId = uuidv4();
             const now = new Date();
@@ -186,8 +192,8 @@ export class LocalJsonLock implements ILockingManager {
               metadata,
             };
             await this.saveToFile();
-            
-            setSpanLockAcquiredStatus(true)
+
+            setSpanLockAcquiredStatus(true);
 
             return {
               success: true,
@@ -199,13 +205,18 @@ export class LocalJsonLock implements ILockingManager {
             await new Promise((resolve) => setTimeout(resolve, retryDelay));
           }
         }
-        setSpanLockAcquiredStatus(false)
+        setSpanLockAcquiredStatus(false);
         return {
           success: false,
           error: 'Failed to acquire lock after retries',
         };
       },
-      { 'lock.path': path, 'lock.timeout': options.timeout, 'lock.retries': options.retries, 'lock.retries.delay': options.retryDelay },
+      {
+        'lock.path': path,
+        'lock.timeout': options.timeout,
+        'lock.retries': options.retries,
+        'lock.retries.delay': options.retryDelay,
+      },
     );
   }
 
@@ -294,9 +305,9 @@ export class LocalJsonLock implements ILockingManager {
       'getLockInfo',
       async () => {
         await this.initialize();
-        const lockData = this.locks[path]
+        const lockData = this.locks[path];
         if (!lockData) {
-          return null
+          return null;
         }
         const lock: LockInfo = {
           ...lockData,
@@ -304,7 +315,7 @@ export class LocalJsonLock implements ILockingManager {
           acquiredAt: new Date(lockData.acquiredAt),
         };
         if (isLockExpired(lock)) {
-          return null
+          return null;
         }
         return lock;
       },
