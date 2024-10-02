@@ -1,107 +1,144 @@
 import { z } from "zod";
+import { IStorageManager } from '../StorageMangers/types'
+import { ILockingManager } from "../LockingManagers/types";
 
 /**
- * Interface for managing access locks.
+ * Interface defining the configuration structure for ArvoStorage instances.
+ * 
+ * ArvoStorage is a type-safe data storage class that combines schema validation,
+ * storage management, and optional locking mechanisms for concurrent access control.
+ * This interface defines the required and optional components needed to create
+ * an ArvoStorage instance.
  *
- * This interface provides methods for acquiring and releasing locks, ensuring
- * controlled access to resources. It can be used independently of the storage manager.
+ * @typeParam TDataSchema - A Zod object schema type that defines and validates
+ *                          the structure of the data to be stored. Must be a
+ *                          Zod object schema, not a primitive or array schema.
+ * 
+ * @example
+ * ```typescript
+ * // Define a schema for user data
+ * const userSchema = z.object({
+ *   id: z.string().uuid(),
+ *   name: z.string().min(1),
+ *   email: z.string().email(),
+ *   metadata: z.object({
+ *     createdAt: z.date(),
+ *     lastModified: z.date()
+ *   }).optional()
+ * });
+ * 
+ * // Create storage and locking managers
+ * const storageManager = new FileSystemStorageManager<typeof userSchema>();
+ * const lockingManager = new RedisLockManager();
+ * 
+ * // Configure ArvoStorage
+ * const userStorageConfig: IArvoStorage<typeof userSchema> = {
+ *   schema: userSchema,
+ *   storageManager,
+ *   lockingManager // Optional, but recommended for concurrent environments
+ * };
+ * 
+ * // Create ArvoStorage instance
+ * const userStorage = new ArvoStorage(userStorageConfig);
+ * ```
  */
-export interface ILockingManager {
+export interface IArvoStorage<TDataSchema extends z.ZodObject<any, any, any>> {
   /**
-   * Attempts to acquire a lock on the specified path.
-   *
-   * @param path - The path to acquire a lock on.
-   * @returns A promise resolving to true if the lock is acquired, false otherwise.
-   */
-  acquireLock(path: string): Promise<boolean>;
-
-  /**
-   * Releases a lock on the specified path.
-   *
-   * @param path - The path to release the lock from.
-   * @returns A promise resolving to true if the lock is successfully released, false otherwise.
-   */
-  releaseLock(path: string): Promise<boolean>;
-
-  /**
-   * Checks if a lock is currently held on the specified path.
-   *
-   * @param path - The path to check for a lock.
-   * @returns A promise resolving to a boolean indicating if the path is locked.
-   */
-  isLocked(path: string): Promise<boolean>;
-}
-
-/**
- * Interface for managing storage operations.
- *
- * This interface abstracts the basic functionalities for storage operations
- * including writing, reading, deleting, and existence checks of data in a storage medium.
- * It uses a generic type parameter to ensure type safety of the stored data.
- *
- * @typeParam TDataSchema - A Zod schema type representing the structure of the data to be stored.
- */
-export interface IStorageManager<TDataSchema extends z.ZodTypeAny> {
-  /**
-   * Writes data to a specified storage path.
-   *
-   * @param data - The data to write, conforming to the specified schema.
-   * @param path - The target path for storing the data.
-   * @returns A promise that resolves once the write operation is complete.
-   */
-  write(data: z.infer<TDataSchema>, path: string): Promise<void>;
-
-  /**
-   * Reads data from a specified storage path.
-   *
-   * @param path - The path from which to read the data.
-   * @param defaultValue - The default value to return if the data is not found.
-   * @returns A promise resolving to the read data or the provided default value.
-   */
-  read(
-    path: string,
-    defaultValue: z.infer<TDataSchema> | null
-  ): Promise<z.infer<TDataSchema> | null>;
-
-  /**
-   * Deletes data from a specified storage path.
-   *
-   * @param path - The path from which to delete the data.
-   * @returns A promise that resolves once the delete operation is complete.
-   */
-  delete(path: string): Promise<void>;
-
-  /**
-   * Checks the existence of data at a specified storage path.
-   *
-   * @param path - The path to check for data existence.
-   * @returns A promise resolving to a boolean indicating if the data exists.
-   */
-  exists(path: string): Promise<boolean>;
-}
-
-/**
- * Interface defining the structure for input parameters of ArvoStorage.
- *
- * @typeParam TDataSchema - A Zod schema type representing the structure of the data to be stored.
- */
-export interface IArvoStorage<TDataSchema extends z.ZodTypeAny> {
-  /**
-   * The schema of the data represented by a Zod object.
-   * This schema is used to validate the data structure during operations.
+   * The Zod object schema that defines and validates the data structure.
+   * 
+   * This schema is used to:
+   * 1. Validate data before storage operations
+   * 2. Provide TypeScript type inference for stored data
+   * 3. Ensure data consistency across storage operations
+   * 
+   * @remarks
+   * The schema must be a Zod object schema. Primitive schemas (string, number, etc.)
+   * or array schemas are not supported directly. Wrap them in an object if needed.
+   * 
+   * @example
+   * ```typescript
+   * const schema = z.object({
+   *   id: z.string(),
+   *   values: z.array(z.number()), // Array within an object is fine
+   *   metadata: z.object({
+   *     tags: z.array(z.string())
+   *   }).optional()
+   * });
+   * ```
    */
   schema: TDataSchema;
 
   /**
-   * IStorageManager instance for storage operations.
-   * This manager handles the actual storage and retrieval of data.
+   * The storage manager instance responsible for actual data persistence.
+   * 
+   * This component handles the underlying storage operations (read, write, delete, etc.)
+   * and must comply with the IStorageManager interface. The storage manager must
+   * use the same schema type as defined in the ArvoStorage configuration.
+   * 
+   * @example
+   * ```typescript
+   * class MyStorageManager implements IStorageManager<typeof mySchema> {
+   *   schema = mySchema;
+   *   
+   *   async write(data: z.infer<typeof mySchema>, path: string) {
+   *     // Implementation
+   *   }
+   *   
+   *   async read(path: string, defaultValue: z.infer<typeof mySchema> | null) {
+   *     // Implementation
+   *   }
+   *   
+   *   // ... other required method implementations
+   * }
+   * ```
    */
   storageManager: IStorageManager<TDataSchema>;
 
   /**
-   * Optional ILockingManager instance for lock management.
-   * If provided, this manager handles locking mechanisms to ensure data integrity
-   * in concurrent environments.
+   * Optional locking manager for handling concurrent access to stored data.
+   * 
+   * When provided, the locking manager ensures safe concurrent operations by:
+   * 1. Preventing simultaneous writes to the same data
+   * 2. Ensuring read consistency during updates
+   * 3. Preventing race conditions in multi-user or multi-process environments
+   * 
+   * @remarks
+   * While optional, using a locking manager is highly recommended in any environment
+   * where concurrent access to data is possible (e.g., web servers, distributed systems).
+   * 
+   * @example
+   * ```typescript
+   * class MyLockManager implements ILockingManager {
+   *   async acquireLock(path: string): Promise<boolean> {
+   *     // Implementation
+   *   }
+   *   
+   *   async releaseLock(path: string): Promise<boolean> {
+   *     // Implementation
+   *   }
+   *   
+   *   // ... other required method implementations
+   * }
+   * ```
    */
   lockingManager?: ILockingManager;
 }
+
+/**
+ * Type alias for the inferred data type from an ArvoStorage instance.
+ * 
+ * @typeParam T - The ArvoStorage interface type
+ * 
+ * @example
+ * ```typescript
+ * const userStorageConfig: IArvoStorage<typeof userSchema> = {
+ *   schema: userSchema,
+ *   storageManager: new FileSystemStorageManager()
+ * };
+ * 
+ * // Infer the data type
+ * type UserData = ArvoStorageData<typeof userStorageConfig>;
+ * // UserData is now equivalent to z.infer<typeof userSchema>
+ * ```
+ */
+export type ArvoStorageData<T extends IArvoStorage<any>> = z.infer<T["schema"]>;

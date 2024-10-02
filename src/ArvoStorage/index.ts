@@ -1,16 +1,66 @@
 import { ArvoStorageTracer, exceptionToSpan } from '../OpenTelemetry';
-import { SpanStatusCode } from '@opentelemetry/api';
+import {
+  SpanStatusCode,
+  Span,
+  AttributeValue,
+  context,
+  trace,
+} from '@opentelemetry/api';
 import { z } from 'zod';
-import { IArvoStorage, ILockingManager, IStorageManager } from './types';
+import { IArvoStorage } from './types';
+import { IStorageManager } from '../StorageMangers/types';
+import { ILockingManager, LockResult } from '../LockingManagers/types';
+
+/**
+ * Custom error class for ArvoStorage-specific errors
+ */
+export class ArvoStorageError extends Error {
+  constructor(
+    message: string,
+    public readonly cause?: Error,
+  ) {
+    super(message);
+    this.name = 'ArvoStorageError';
+  }
+}
 
 /**
  * ArvoStorage class provides a high-level interface for storage operations with built-in
  * schema validation, locking mechanisms, and OpenTelemetry tracing.
  *
- * @template TDataSchema - A Zod schema type representing the structure of the data to be stored.
+ * Features:
+ * - Type-safe data storage and retrieval
+ * - Schema validation using Zod
+ * - Optional locking mechanism for concurrent access
+ * - Comprehensive OpenTelemetry tracing
+ * - Batch operations support
+ *
+ * @template TDataSchema - A Zod object schema type representing the structure of the data to be stored.
+ *
+ * @example
+ * ```typescript
+ * const userSchema = z.object({
+ *   id: z.string().uuid(),
+ *   name: z.string(),
+ *   email: z.string().email()
+ * });
+ *
+ * const storage = new ArvoStorage({
+ *   schema: userSchema,
+ *   storageManager: new FileStorageManager(),
+ *   lockingManager: new RedisLockManager()
+ * });
+ *
+ * await storage.write({
+ *   id: '123e4567-e89b-12d3-a456-426614174000',
+ *   name: 'John Doe',
+ *   email: 'john@example.com'
+ * }, 'users/123');
+ * ```
  */
-export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
-  
+export default class ArvoStorage<
+  TDataSchema extends z.ZodObject<any, any, any>,
+> {
   /**
    * The Zod schema used for data validation.
    */
@@ -19,67 +69,101 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
   /**
    * The storage manager responsible for data persistence operations.
    */
-  private readonly storageManager: IStorageManager<TDataSchema>
+  public readonly storageManager: IStorageManager<TDataSchema>;
 
   /**
    * The optional locking manager for concurrency control.
    */
-  private readonly lockingManager: ILockingManager | null
+  public readonly lockingManager: ILockingManager | null;
 
   /**
    * Creates an instance of ArvoStorage.
    *
    * @param params - Configuration parameters for ArvoStorage.
+   * @throws {ArvoStorageError} If the schema or storage manager are invalid
    */
   constructor(params: IArvoStorage<TDataSchema>) {
-    this.schema = params.schema
-    this.storageManager = params.storageManager
-    this.lockingManager = params.lockingManager ?? null
+    this.schema = params.schema;
+    this.storageManager = params.storageManager;
+    this.lockingManager = params.lockingManager ?? null;
+
+    if (!this.schema || typeof this.schema.parse !== 'function') {
+      throw new ArvoStorageError('Invalid schema provided to ArvoStorage');
+    }
+
+    if (!this.storageManager) {
+      throw new ArvoStorageError('Storage manager is required');
+    }
+  }
+
+  /**
+   * Creates a traced execution context for ArvoStorage operations.
+   *
+   * @private
+   */
+  private async executeTraced<T>(
+    operation: string,
+    path: string,
+    action: (span: Span) => Promise<T>,
+    additionalAttributes: Record<string, AttributeValue | undefined> = {},
+  ): Promise<T> {
+    const span = ArvoStorageTracer.startSpan(`ArvoStorage.${operation}`, {
+      attributes: {
+        'arvo.storage.path': path,
+        ...additionalAttributes,
+      },
+    });
+
+    try {
+      const result = await context.with(
+        trace.setSpan(context.active(), span),
+        () => action(span),
+      );
+      span.setAttributes({
+        [`arvo.storage.${operation}.success`]: true,
+      });
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    } catch (e) {
+      const error = e as Error;
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: error.message,
+      });
+      span.setAttributes({
+        [`arvo.storage.${operation}.success`]: false,
+      });
+      exceptionToSpan(error, span);
+      throw new ArvoStorageError(`Operation ${operation} failed`, error);
+    } finally {
+      span.end();
+    }
   }
 
   /**
    * Reads data from the specified path.
    *
    * @param path - The path to read data from.
-   * @param __default - The default value to return if no data is found.
+   * @param defaultValue - The default value to return if no data is found.
    * @returns A promise that resolves to the read data or the default value.
+   * @throws {ArvoStorageError} If the read operation fails
+   *
+   * @example
+   * ```typescript
+   * const user = await storage.read('users/123', null);
+   * if (user) {
+   *   console.log(user.name); // Type-safe access
+   * }
+   * ```
    */
   async read(
     path: string,
-    __default: z.infer<TDataSchema> | null = null,
+    defaultValue: z.infer<TDataSchema> | null = null,
   ): Promise<z.infer<TDataSchema> | null> {
-    return await ArvoStorageTracer.startActiveSpan(
-      'ArvoStorage.read',
-      async (span) => {
-        span.setAttributes({
-          'arvo.storage.path': path,
-        });
-
-        try {
-          let result = await this.storageManager.read(path, __default);
-          if (result !== null) {
-            result = this.schema.parse(result)
-          }
-
-          span.setAttributes({
-            'arvo.storage.read.success': true,
-            'arvo.storage.read.data_length': result ? JSON.stringify(result).length : 0,
-          });
-
-          span.setStatus({ code: SpanStatusCode.OK });          
-          return result;
-        } catch (e) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
-          span.setAttributes({
-            'arvo.storage.read.success': false,
-          });
-          exceptionToSpan(e as Error, span);
-          throw e;
-        } finally {
-          span.end();
-        }
-      },
-    );
+    return this.executeTraced('read', path, async () => {
+      const result = await this.storageManager.read(path, defaultValue);
+      return result !== null ? this.schema.parse(result) : result;
+    });
   }
 
   /**
@@ -88,37 +172,61 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    * @param data - The data to write, conforming to the specified schema.
    * @param path - The path to write the data to.
    * @returns A promise that resolves when the write operation is complete.
+   * @throws {ArvoStorageError} If the write operation fails or data validation fails
    */
   async write(data: z.infer<TDataSchema>, path: string): Promise<void> {
-    return await ArvoStorageTracer.startActiveSpan(
-      'ArvoStorage.write',
-      async (span) => {
-        span.setAttributes({
-          'arvo.storage.path': path,
-          'arvo.storage.data_length': JSON.stringify(data).length,
-        });
-
-        try {
-          const dataToWrite: z.infer<TDataSchema> = this.schema.parse(data)
-          await this.storageManager.write(dataToWrite, path);
-
-          span.setAttributes({
-            'arvo.storage.write.success': true,
-          });
-
-          span.setStatus({ code: SpanStatusCode.OK });
-        } catch (e) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
-          span.setAttributes({
-            'arvo.storage.write.success': false,
-          });
-          exceptionToSpan(e as Error, span);
-          throw e;
-        } finally {
-          span.end();
-        }
+    return this.executeTraced(
+      'write',
+      path,
+      async () => {
+        const dataToWrite = this.schema.parse(data);
+        await this.storageManager.write(dataToWrite, path);
+      },
+      {
+        'arvo.storage.data_length': JSON.stringify(data).length,
       },
     );
+  }
+
+  /**
+   * Performs batch write operations.
+   *
+   * @param items - Array of items to write, each containing data and path
+   * @returns Promise resolving to an array of results, each indicating success or failure
+   */
+  async batchWrite(
+    items: Array<{ data: z.infer<TDataSchema>; path: string }>,
+  ): Promise<
+    Array<{
+      path: string;
+      success: boolean;
+      error?: Error;
+    }>
+  > {
+    return this.executeTraced('batchWrite', 'multiple', async (span) => {
+      span.setAttributes({
+        'arvo.storage.batch.count': items.length,
+      });
+
+      const results = await Promise.all(
+        items.map(async ({ data, path }) => {
+          try {
+            await this.write(data, path);
+            return { path, success: true };
+          } catch (error) {
+            return { path, success: false, error: error as Error };
+          }
+        }),
+      );
+
+      const successCount = results.filter((r) => r.success).length;
+      span.setAttributes({
+        'arvo.storage.batch.success_count': successCount,
+        'arvo.storage.batch.failure_count': items.length - successCount,
+      });
+
+      return results;
+    });
   }
 
   /**
@@ -126,34 +234,12 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    *
    * @param path - The path from which to delete data.
    * @returns A promise that resolves when the delete operation is complete.
-   * @throws Error if the storageManager encounters an issue during deletion.
+   * @throws {ArvoStorageError} If the delete operation fails
    */
   async delete(path: string): Promise<void> {
-    return await ArvoStorageTracer.startActiveSpan(
-      'ArvoStorage.delete',
-      async (span) => {
-        span.setAttributes({
-          'arvo.storage.path': path,
-        });
-
-        try {
-          await this.storageManager.delete(path);
-          span.setAttributes({
-            'arvo.storage.delete.success': true,
-          });
-          span.setStatus({ code: SpanStatusCode.OK });
-        } catch (e) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
-          span.setAttributes({
-            'arvo.storage.delete.success': false,
-          });
-          exceptionToSpan(e as Error, span);
-          throw e;
-        } finally {
-          span.end();
-        }
-      },
-    );
+    return this.executeTraced('delete', path, async () => {
+      await this.storageManager.delete(path);
+    });
   }
 
   /**
@@ -161,36 +247,12 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    *
    * @param path - The path to check for data existence.
    * @returns A promise resolving to a boolean indicating if the data exists.
-   * @throws Error if the storageManager encounters an issue during the check.
+   * @throws {ArvoStorageError} If the existence check fails
    */
   async exists(path: string): Promise<boolean> {
-    return await ArvoStorageTracer.startActiveSpan(
-      'ArvoStorage.exists',
-      async (span) => {
-        span.setAttributes({
-          'arvo.storage.path': path,
-        });
-
-        try {
-          const result = await this.storageManager.exists(path);
-          span.setAttributes({
-            'arvo.storage.exists.success': true,
-            'arvo.storage.exists.result': result,
-          });
-          span.setStatus({ code: SpanStatusCode.OK });
-          return result;
-        } catch (e) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
-          span.setAttributes({
-            'arvo.storage.exists.success': false,
-          });
-          exceptionToSpan(e as Error, span);
-          throw e;
-        } finally {
-          span.end();
-        }
-      },
-    );
+    return this.executeTraced('exists', path, async () => {
+      return await this.storageManager.exists(path);
+    });
   }
 
   /**
@@ -198,40 +260,13 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    *
    * @param path - The path to acquire a lock on.
    * @returns A promise resolving to true if the lock is acquired, false otherwise.
-   * @throws Error if the lockingManager is not defined or an error is thrown during execution.
+   * @throws {ArvoStorageError} If locking manager is not available or lock acquisition fails
    */
-  async acquireLock(path: string): Promise<boolean> {
-    return await ArvoStorageTracer.startActiveSpan(
-      'ArvoStorage.acquireLock',
-      async (span) => {
-        span.setAttributes({
-          'arvo.storage.path': path,
-        });
-
-        try {
-          if (!this.lockingManager) {
-            throw new Error(
-              `[ArvoStorage][acquireLock] Trying to use locking manager which does not exist.`,
-            );
-          }
-          const result = await this.lockingManager.acquireLock(path);
-          span.setAttributes({
-            'arvo.storage.lock.acquire.success': true,
-          });
-          span.setStatus({ code: SpanStatusCode.OK });
-          return result;
-        } catch (e) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
-          span.setAttributes({
-            'arvo.storage.lock.acquire.success': false,
-          });
-          exceptionToSpan(e as Error, span);
-          throw e;
-        } finally {
-          span.end();
-        }
-      },
-    );
+  async acquireLock(path: string): Promise<LockResult> {
+    this.ensureLockingManager('acquireLock');
+    return this.executeTraced('acquireLock', path, async () => {
+      return await this.lockingManager!.acquireLock(path);
+    });
   }
 
   /**
@@ -239,40 +274,13 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    *
    * @param path - The path to release the lock from.
    * @returns A promise resolving to true if the lock is released successfully, false otherwise.
-   * @throws Error if the lockingManager is not defined or an error is thrown during execution.
+   * @throws {ArvoStorageError} If locking manager is not available or lock release fails
    */
   async releaseLock(path: string): Promise<boolean> {
-    return await ArvoStorageTracer.startActiveSpan(
-      'ArvoStorage.releaseLock',
-      async (span) => {
-        span.setAttributes({
-          'arvo.storage.path': path,
-        });
-
-        try {
-          if (!this.lockingManager) {
-            throw new Error(
-              `[ArvoStorage][releaseLock] Trying to use locking manager which does not exist.`,
-            );
-          }
-          const result = await this.lockingManager.releaseLock(path);
-          span.setAttributes({
-            'arvo.storage.lock.release.success': true,
-          });
-          span.setStatus({ code: SpanStatusCode.OK });
-          return result;
-        } catch (e) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
-          span.setAttributes({
-            'arvo.storage.lock.release.success': false,
-          });
-          exceptionToSpan(e as Error, span);
-          throw e;
-        } finally {
-          span.end();
-        }
-      },
-    );
+    this.ensureLockingManager('releaseLock');
+    return this.executeTraced('releaseLock', path, async () => {
+      return await this.lockingManager!.releaseLock(path);
+    });
   }
 
   /**
@@ -280,41 +288,73 @@ export default class ArvoStorage<TDataSchema extends z.ZodTypeAny> {
    *
    * @param path - The path to check for a lock.
    * @returns A promise resolving to a boolean indicating if the path is locked.
-   * @throws Error if the lockingManager is not defined or an error is thrown during execution.
+   * @throws {ArvoStorageError} If locking manager is not available or check fails
    */
   async isLocked(path: string): Promise<boolean> {
+    this.ensureLockingManager('isLocked');
+    return this.executeTraced('isLocked', path, async (span) => {
+      const result = await this.lockingManager!.isLocked(path);
+      span.setAttributes({
+        'arvo.storage.lock.status': result ? 'locked' : 'unlocked',
+      });
+      return result;
+    });
+  }
 
-    return await ArvoStorageTracer.startActiveSpan(
-      'ArvoStorage.isLocked',
-      async (span) => {
-        span.setAttributes({
-          'arvo.storage.path': path,
-        });
+  /**
+   * Lists all stored paths with pagination support.
+   *
+   * @param options - Pagination options
+   * @returns Promise resolving to an array of paths and total count
+   */
+  async list(options: {
+    start?: number;
+    count?: number;
+    prefix?: string;
+  }): Promise<{
+    paths: string[];
+    totalCount: number;
+  }> {
+    const { start = 0, count = 100, prefix } = options;
 
-        try {
-          if (!this.lockingManager) {
-            throw new Error(
-              `[ArvoStorage][isLocked] Trying to use locking manager which does not exist.`,
-            );
-          }
-          const result = await this.lockingManager.isLocked(path);
-          span.setAttributes({
-            'arvo.storage.lock.check.success': true,
-            'arvo.storage.lock.check.status': result ? 'locked' : 'unlocked'
-          });
-          span.setStatus({ code: SpanStatusCode.OK });
-          return result;
-        } catch (e) {
-          span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
-          span.setAttributes({
-            'arvo.storage.lock.check.success': false,
-          });
-          exceptionToSpan(e as Error, span);
-          throw e;
-        } finally {
-          span.end();
-        }
-      },
-    );
+    return this.executeTraced('list', prefix || '*', async (span) => {
+      span.setAttributes({
+        'arvo.storage.list.start': start,
+        'arvo.storage.list.count': count,
+        'arvo.storage.list.prefix': prefix || '*',
+      });
+
+      const [paths, totalCount] = await Promise.all([
+        this.storageManager.list(start, count),
+        this.storageManager.count(),
+      ]);
+
+      const filteredPaths = prefix
+        ? paths.filter((path) => path.startsWith(prefix))
+        : paths;
+
+      span.setAttributes({
+        'arvo.storage.list.returned_count': filteredPaths.length,
+      });
+
+      return {
+        paths: filteredPaths,
+        totalCount,
+      };
+    });
+  }
+
+  /**
+   * Ensures that the locking manager is available.
+   *
+   * @private
+   * @throws {ArvoStorageError} If locking manager is not available
+   */
+  private ensureLockingManager(operation: string): void {
+    if (!this.lockingManager) {
+      throw new ArvoStorageError(
+        `Cannot perform ${operation}: No locking manager is configured`,
+      );
+    }
   }
 }

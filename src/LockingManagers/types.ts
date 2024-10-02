@@ -75,23 +75,23 @@ export interface LockInfo {
 
 /**
  * Interface for managing distributed resource locks.
- * 
+ *
  * This interface provides comprehensive methods for acquiring, releasing, and managing
  * locks in a distributed system. It ensures safe concurrent access to shared resources
  * and supports features like lock expiration, forced release, and lock metadata.
- * 
+ *
  * @example
  * ```typescript
  * class RedisLockManager implements ILockingManager {
  *   // Implementation details...
  * }
- * 
+ *
  * const lockManager = new RedisLockManager();
  * const lockResult = await lockManager.acquireLock('resource/123', {
  *   timeout: 5000,
  *   retries: 3
  * });
- * 
+ *
  * if (lockResult.success) {
  *   try {
  *     // Perform operations on the locked resource
@@ -109,7 +109,7 @@ export interface ILockingManager {
    * @param options - Optional settings for the lock acquisition.
    * @returns A promise resolving to a LockResult object.
    * @throws {Error} If the lock manager is not available or malfunctioning.
-   * 
+   *
    * @example
    * ```typescript
    * const result = await lockManager.acquireLock('users/123', {
@@ -117,7 +117,7 @@ export interface ILockingManager {
    *   retries: 3,
    *   metadata: { owner: 'processId123' }
    * });
-   * 
+   *
    * if (result.success) {
    *   console.log(`Lock acquired: ${result.lockId}`);
    * }
@@ -132,7 +132,7 @@ export interface ILockingManager {
    * @param lockId - Optional lock ID to ensure only the correct lock is released.
    * @returns A promise resolving to true if the lock is successfully released, false otherwise.
    * @throws {Error} If the lock manager is not available or malfunctioning.
-   * 
+   *
    * @example
    * ```typescript
    * const released = await lockManager.releaseLock('users/123', 'lock-uuid-123');
@@ -179,7 +179,7 @@ export interface ILockingManager {
    * @param path - The path to check for a lock.
    * @returns A promise resolving to a boolean indicating if the path is locked.
    * @throws {Error} If the lock manager is not available or malfunctioning.
-   * 
+   *
    * @example
    * ```typescript
    * if (await lockManager.isLocked('users/123')) {

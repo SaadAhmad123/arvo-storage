@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 /**
  * Interface for managing storage operations with strongly typed object schemas.
@@ -44,7 +44,7 @@ import { z } from "zod";
  * ```
  */
 export interface IStorageManager<
-  TDataSchema extends z.ZodObject<any, any, any>
+  TDataSchema extends z.ZodObject<any, any, any>,
 > {
   /**
    * The Zod schema used for validating data in this storage manager.
@@ -112,7 +112,7 @@ export interface IStorageManager<
    */
   read(
     path: string,
-    defaultValue: z.infer<TDataSchema> | null
+    defaultValue: z.infer<TDataSchema> | null,
   ): Promise<z.infer<TDataSchema> | null>;
 
   /**
