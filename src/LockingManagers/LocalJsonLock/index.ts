@@ -13,7 +13,7 @@ import { isLockExpired } from '../utils';
  * @implements {ILockingManager}
  */
 export class LocalJsonLock implements ILockingManager {
-  private filePath: string;
+  private readonly filePath: string;
   private locks: Record<string, Omit<LockInfo, 'acquiredAt' | 'expiresAt'> & {
     acquiredAt: string;
     expiresAt: string;
