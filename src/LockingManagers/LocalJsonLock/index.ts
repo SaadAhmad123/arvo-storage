@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
+import { isLockExpired } from '../utils';
 
 /**
  * Implements a file-based locking mechanism using JSON for persistence.
@@ -13,7 +14,10 @@ import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
  */
 export class LocalJsonLock implements ILockingManager {
   private filePath: string;
-  private locks: Record<string, LockInfo> = {};
+  private locks: Record<string, Omit<LockInfo, 'acquiredAt' | 'expiresAt'> & {
+    acquiredAt: string;
+    expiresAt: string;
+  }> = {};
 
   /**
    * Creates an instance of LocalJsonLock.
@@ -126,16 +130,6 @@ export class LocalJsonLock implements ILockingManager {
   }
 
   /**
-   * Checks if a lock has expired.
-   * @private
-   * @param lock - The lock to check.
-   * @returns True if the lock has expired, false otherwise.
-   */
-  private isLockExpired(lock: LockInfo): boolean {
-    return new Date(lock.expiresAt) <= new Date();
-  }
-
-  /**
    * Checks if a path is currently locked.
    * @param path - The path to check.
    * @returns True if the path is locked, false otherwise.
@@ -146,7 +140,11 @@ export class LocalJsonLock implements ILockingManager {
       async () => {
         await this.initialize();
         const lock = this.locks[path];
-        return lock !== undefined && !this.isLockExpired(lock);
+        return lock !== undefined && !isLockExpired({
+          ...lock,
+          acquiredAt: new Date(lock.acquiredAt),
+          expiresAt: new Date(lock.expiresAt),
+        });
       },
       { path },
     );
@@ -192,7 +190,7 @@ export class LocalJsonLock implements ILockingManager {
             return {
               success: true,
               lockId: lockId,
-              expiresAt: expiresAt.toISOString(),
+              expiresAt: expiresAt,
             };
           }
           if (attempt < retries) {
@@ -294,11 +292,19 @@ export class LocalJsonLock implements ILockingManager {
       'getLockInfo',
       async () => {
         await this.initialize();
-        const lock = this.locks[path];
-        if (lock && !this.isLockExpired(lock)) {
-          return lock;
+        const lockData = this.locks[path]
+        if (!lockData) {
+          return null
         }
-        return null;
+        const lock: LockInfo = {
+          ...lockData,
+          expiresAt: new Date(lockData.expiresAt),
+          acquiredAt: new Date(lockData.acquiredAt),
+        };
+        if (isLockExpired(lock)) {
+          return null
+        }
+        return lock;
       },
       { path },
     );

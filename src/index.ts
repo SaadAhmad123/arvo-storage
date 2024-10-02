@@ -10,6 +10,7 @@ import { IArvoStorage, ArvoStorageData } from './ArvoStorage/types';
 import ArvoStorage from './ArvoStorage';
 import { LocalJsonLock } from './LockingManagers/LocalJsonLock';
 import { AWSCredentials } from './types';
+import { DynamoDBLock } from './LockingManagers/DynamoDBLock';
 
 export {
   ArvoStorage,
@@ -23,4 +24,5 @@ export {
   LockOptions,
   LockResult,
   AWSCredentials,
+  DynamoDBLock,
 };

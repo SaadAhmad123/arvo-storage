@@ -40,7 +40,7 @@ export interface LockResult {
   /**
    * The expiration time of the lock, if successful.
    */
-  expiresAt?: string;
+  expiresAt?: Date;
 
   /**
    * Error message if the lock acquisition failed.
@@ -60,12 +60,12 @@ export interface LockInfo {
   /**
    * When the lock was acquired.
    */
-  acquiredAt: string;
+  acquiredAt: Date;
 
   /**
    * When the lock will expire.
    */
-  expiresAt: string;
+  expiresAt: Date;
 
   /**
    * Any metadata associated with the lock.

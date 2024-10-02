@@ -10,6 +10,8 @@ import {
 import { AWSCredentials } from '../../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
+import { dateToUnixTimestampInSeconds, unixTimestampInSecondsToDate } from "../../utils";
+import { isLockExpired } from "../utils";
 
 /**
  * Implements a distributed locking mechanism using AWS DynamoDB with OpenTelemetry instrumentation.
@@ -17,19 +19,21 @@ import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
  * with DynamoDB as the backend storage.
  * @implements {ILockingManager}
  */
-export class DynamoDBLockManager implements ILockingManager {
+export class DynamoDBLock implements ILockingManager {
   private client: DynamoDBClient;
 
   /**
-   * Creates an instance of DynamoDBLockManager.
-   * @param {string} tableName - The name of the DynamoDB table used for lock storage.
-   * @param {AWSCredentials} credentials - AWS credentials and configuration.
+   * Creates an instance of DynamoDBLock.
+   * @param tableName - The name of the DynamoDB table used for lock storage.
+   * @param credentials - AWS credentials and configuration. If not provided, defaults to environment variables or IAM roles.
+   * @param [primaryKey='path_key'] - The name of the primary key column in the DynamoDB table.
    */
   constructor(
     public tableName: string,
-    private credentials: AWSCredentials
+    private credentials: AWSCredentials,
+    public primaryKey: string = 'path_key',
   ) {
-    this.client = new DynamoDBClient({ 
+    this.client = new DynamoDBClient({
       region: credentials.awsRegion ?? 'ap-southeast-2',
       credentials: {
         ...(credentials.awsAccessKey ? { accessKeyId: credentials.awsAccessKey } : {}),
@@ -99,22 +103,22 @@ export class DynamoDBLockManager implements ILockingManager {
           message: `[DynamoDBLockManager][acquireLock] -> attempt ${attempt + 1}/${retries + 1}`
         });
 
-        if (!(await this.isLocked(path))) {
+        if (!(await this.getLockInfo(path))) {
           const lockId = uuidv4();
           const now = new Date();
-          const expiresAt = new Date(now.getTime() + timeout).toISOString();
+          const expiresAt = new Date(now.getTime() + timeout);
 
           try {
             await this.client.send(new PutItemCommand({
               TableName: this.tableName,
               Item: marshall({
-                path,
+                [this.primaryKey]: path,
                 lockId,
-                acquiredAt: now.toISOString(),
-                expiresAt,
+                acquiredAt: dateToUnixTimestampInSeconds(now),
+                expiresAt: dateToUnixTimestampInSeconds(expiresAt),
                 metadata
               }),
-              ConditionExpression: 'attribute_not_exists(path)'
+              ConditionExpression: `attribute_not_exists(${this.primaryKey})`
             }));
 
             return {
@@ -155,7 +159,7 @@ export class DynamoDBLockManager implements ILockingManager {
     return this.executeTraced('releaseLock', async () => {
       const params: any = {
         TableName: this.tableName,
-        Key: marshall({ path }),
+        Key: marshall({ [this.primaryKey]: path }),
       };
 
       if (lockId) {
@@ -172,7 +176,7 @@ export class DynamoDBLockManager implements ILockingManager {
         }
         throw error;
       }
-    }, { path, lockId });
+    }, { path, lock_id: lockId });
   }
 
   /**
@@ -184,7 +188,7 @@ export class DynamoDBLockManager implements ILockingManager {
     return this.executeTraced('forceReleaseLock', async () => {
       await this.client.send(new DeleteItemCommand({
         TableName: this.tableName,
-        Key: marshall({ path })
+        Key: marshall({ [this.primaryKey]: path })
       }));
       return true;
     }, { path });
@@ -199,24 +203,33 @@ export class DynamoDBLockManager implements ILockingManager {
    */
   async extendLock(path: string, lockId: string, duration: number): Promise<boolean> {
     return this.executeTraced('extendLock', async () => {
+      // First, get the existing lock info
+      const existingLock = await this.getLockInfo(path);
+
+      // If the lock doesn't exist or doesn't match the provided lockId or lock has expired, return false
+      if (!existingLock || existingLock.lockId !== lockId || isLockExpired(existingLock)) {
+        return false;
+      }
+
       const now = new Date();
-      const newExpiresAt = new Date(now.getTime() + duration).toISOString();
+      const newExpiresAt = new Date(existingLock.expiresAt.getTime() + duration);
 
       try {
         await this.client.send(new UpdateItemCommand({
           TableName: this.tableName,
-          Key: marshall({ path }),
+          Key: marshall({ [this.primaryKey]: path }),
           UpdateExpression: 'SET expiresAt = :newExpiresAt',
-          ConditionExpression: 'lockId = :lockId AND expiresAt > :now',
+          ConditionExpression: 'lockId = :lockId AND expiresAt = :currentExpiresAt',
           ExpressionAttributeValues: marshall({
-            ':newExpiresAt': newExpiresAt,
+            ':newExpiresAt': dateToUnixTimestampInSeconds(newExpiresAt),
             ':lockId': lockId,
-            ':now': now.toISOString()
+            ':currentExpiresAt': dateToUnixTimestampInSeconds(existingLock.expiresAt)
           })
         }));
         return true;
       } catch (error) {
         if ((error as any).name === 'ConditionalCheckFailedException') {
+          // The lock was modified or released between our check and update
           return false;
         }
         throw error;
@@ -226,6 +239,8 @@ export class DynamoDBLockManager implements ILockingManager {
 
   /**
    * Retrieves information about a lock on a given path.
+   * If an expired lock is found, it will be forcibly deleted and null will be returned.
+   * 
    * @param {string} path - The path to get lock information for.
    * @returns {Promise<LockInfo | null>} A promise resolving to the lock information if a valid lock exists, null otherwise.
    */
@@ -233,15 +248,22 @@ export class DynamoDBLockManager implements ILockingManager {
     return this.executeTraced('getLockInfo', async () => {
       const result = await this.client.send(new GetItemCommand({
         TableName: this.tableName,
-        Key: marshall({ path })
+        Key: marshall({ [this.primaryKey]: path })
       }));
 
       if (!result.Item) {
         return null;
       }
 
-      const item = unmarshall(result.Item) as LockInfo;
-      if (new Date(item.expiresAt) <= new Date()) {
+      const data = unmarshall(result.Item);
+      const item: LockInfo = {
+        lockId: data["lockId"],
+        acquiredAt: unixTimestampInSecondsToDate(data["acquiredAt"]),
+        expiresAt: unixTimestampInSecondsToDate(data["expiresAt"]),
+        metadata: data["metadata"]
+      }
+
+      if (isLockExpired(item)) {
         // Lock has expired, delete it and return null
         await this.forceReleaseLock(path);
         return null;
