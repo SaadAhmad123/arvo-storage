@@ -58,7 +58,7 @@ export const setSpanLockAcquiredStatus = (status: boolean): void => {
   const activeSpan: Span | undefined = trace.getActiveSpan();
   if (activeSpan) {
     activeSpan.setAttributes({
-      'lock.acquired.success': status,
+      'lock.acquire.success': status,
     });
   }
 };
