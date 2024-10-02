@@ -89,14 +89,13 @@ export class DynamoDBLock implements ILockingManager {
    * @returns {Promise<LockResult>} A promise resolving to the result of the lock acquisition attempt.
    */
   async acquireLock(path: string, options: LockOptions = {}): Promise<LockResult> {
+    const {
+      timeout = 30000,
+      retries = 2,
+      retryDelay = 1000,
+      metadata = {}
+    } = options;
     return this.executeTraced('acquireLock', async () => {
-      const {
-        timeout = 30000,
-        retries = 2,
-        retryDelay = 1000,
-        metadata = {}
-      } = options;
-
       for (let attempt = 0; attempt <= retries; attempt++) {
         logToSpan({
           level: 'INFO',
@@ -115,7 +114,7 @@ export class DynamoDBLock implements ILockingManager {
       }
       setSpanLockAcquiredStatus(false)
       return { success: false, error: 'Failed to acquire lock after retries' };
-    }, { path, ...options });
+    }, { 'lock.path': path, 'lock.timeout': options.timeout, 'lock.retries': options.retries, 'lock.retries.delay': options.retryDelay });
   }
 
   private async tryAcquireLock(path: string, timeout: number, metadata: Record<string, any>): Promise<LockResult> {
@@ -183,7 +182,7 @@ export class DynamoDBLock implements ILockingManager {
         }
         throw error;
       }
-    }, { path, lock_id: lockId });
+    }, { 'lock.path': path });
   }
 
   /**
@@ -198,7 +197,7 @@ export class DynamoDBLock implements ILockingManager {
         Key: marshall({ [this.primaryKey]: path })
       }));
       return true;
-    }, { path });
+    }, { 'lock.path': path });
   }
 
   /**
@@ -240,7 +239,7 @@ export class DynamoDBLock implements ILockingManager {
         }
         throw error;
       }
-    }, { path, lockId, duration });
+    }, { 'lock.path': path, 'lock.timeout.extension': duration });
   }
 
   /**
@@ -276,7 +275,7 @@ export class DynamoDBLock implements ILockingManager {
       }
 
       return item;
-    }, { path });
+    }, { 'lock.path': path });
   }
 
   /**
@@ -288,6 +287,6 @@ export class DynamoDBLock implements ILockingManager {
     return this.executeTraced('isLocked', async () => {
       const lockInfo = await this.getLockInfo(path);
       return lockInfo !== null;
-    }, { path });
+    }, { 'lock.path': path });
   }
 }

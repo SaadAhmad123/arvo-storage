@@ -146,7 +146,7 @@ export class LocalJsonLock implements ILockingManager {
           expiresAt: new Date(lock.expiresAt),
         });
       },
-      { path },
+      { lock_key: path },
     );
   }
 
@@ -160,17 +160,16 @@ export class LocalJsonLock implements ILockingManager {
     path: string,
     options: LockOptions = {},
   ): Promise<LockResult> {
+    const {
+      timeout = 30000,
+      retries = 1,
+      retryDelay = 1000,
+      metadata = {},
+    } = options;
     return this.executeTraced(
       'acquireLock',
       async () => {
         await this.initialize();
-        const {
-          timeout = 30000,
-          retries = 1,
-          retryDelay = 1000,
-          metadata = {},
-        } = options;
-
         for (let attempt = 0; attempt <= retries; attempt++) {
           logToSpan({
             level: 'INFO',
@@ -206,7 +205,7 @@ export class LocalJsonLock implements ILockingManager {
           error: 'Failed to acquire lock after retries',
         };
       },
-      { path, ...options },
+      { 'lock.path': path, 'lock.timeout': options.timeout, 'lock.retries': options.retries, 'lock.retries.delay': options.retryDelay },
     );
   }
 
@@ -231,7 +230,7 @@ export class LocalJsonLock implements ILockingManager {
         await this.saveToFile();
         return true;
       },
-      { path, lockId },
+      { 'lock.path': path },
     );
   }
 
@@ -251,7 +250,7 @@ export class LocalJsonLock implements ILockingManager {
         }
         return true;
       },
-      { path },
+      { 'lock.path': path },
     );
   }
 
@@ -281,7 +280,7 @@ export class LocalJsonLock implements ILockingManager {
         await this.saveToFile();
         return true;
       },
-      { path, lockId, duration },
+      { 'lock.path': path, 'lock.timeout.extension': duration },
     );
   }
 
@@ -309,7 +308,7 @@ export class LocalJsonLock implements ILockingManager {
         }
         return lock;
       },
-      { path },
+      { 'lock.path': path },
     );
   }
 }
