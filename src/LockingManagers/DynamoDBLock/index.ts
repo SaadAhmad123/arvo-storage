@@ -10,7 +10,7 @@ import {
 import { AWSCredentials } from '../../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
-import { dateToUnixTimestampInSeconds, unixTimestampInSecondsToDate } from "../../utils";
+import { dateToUnixTimestampInSeconds, delay, unixTimestampInSecondsToDate } from "../../utils";
 import { isLockExpired } from "../utils";
 
 /**
@@ -103,50 +103,56 @@ export class DynamoDBLock implements ILockingManager {
           message: `[DynamoDBLockManager][acquireLock] -> attempt ${attempt + 1}/${retries + 1}`
         });
 
-        if (!(await this.getLockInfo(path))) {
-          const lockId = uuidv4();
-          const now = new Date();
-          const expiresAt = new Date(now.getTime() + timeout);
-
-          try {
-            await this.client.send(new PutItemCommand({
-              TableName: this.tableName,
-              Item: marshall({
-                [this.primaryKey]: path,
-                lockId,
-                acquiredAt: dateToUnixTimestampInSeconds(now),
-                expiresAt: dateToUnixTimestampInSeconds(expiresAt),
-                metadata
-              }),
-              ConditionExpression: `attribute_not_exists(${this.primaryKey})`
-            }));
-
-            return {
-              success: true,
-              lockId,
-              expiresAt
-            };
-          } catch (error) {
-            if ((error as any).name === 'ConditionalCheckFailedException') {
-              if (attempt < retries) {
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
-                continue;
-              }
-            }
-            throw error;
-          }
+        const result = await this.tryAcquireLock(path, timeout, metadata);
+        if (result.success) {
+          return result;
         }
 
         if (attempt < retries) {
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          await delay(retryDelay);
         }
       }
 
-      return {
-        success: false,
-        error: 'Failed to acquire lock after retries'
-      };
+      return { success: false, error: 'Failed to acquire lock after retries' };
     }, { path, ...options });
+  }
+
+  private async tryAcquireLock(path: string, timeout: number, metadata: Record<string, any>): Promise<LockResult> {
+    if (await this.getLockInfo(path)) {
+      return { success: false };
+    }
+
+    const lockId = uuidv4();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + timeout);
+
+    try {
+      await this.putLockItem(path, lockId, now, expiresAt, metadata);
+      return { success: true, lockId, expiresAt };
+    } catch (error) {
+      if (this.isConditionalCheckFailedException(error)) {
+        return { success: false };
+      }
+      throw error;
+    }
+  }
+
+  private async putLockItem(path: string, lockId: string, acquiredAt: Date, expiresAt: Date, metadata: Record<string, any>): Promise<void> {
+    await this.client.send(new PutItemCommand({
+      TableName: this.tableName,
+      Item: marshall({
+        [this.primaryKey]: path,
+        lockId,
+        acquiredAt: dateToUnixTimestampInSeconds(acquiredAt),
+        expiresAt: dateToUnixTimestampInSeconds(expiresAt),
+        metadata
+      }),
+      ConditionExpression: `attribute_not_exists(${this.primaryKey})`
+    }));
+  }
+
+  private isConditionalCheckFailedException(error: any): boolean {
+    return error.name === 'ConditionalCheckFailedException';
   }
 
   /**

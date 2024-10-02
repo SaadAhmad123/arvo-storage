@@ -32,7 +32,7 @@ import { ArvoStorageTracer, exceptionToSpan } from '../../OpenTelemetry';
 export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
   implements IStorageManager<TDataSchema>
 {
-  private filePath: string;
+  private readonly filePath: string;
   private data: Record<string, unknown> = {};
   public readonly schema: TDataSchema;
 

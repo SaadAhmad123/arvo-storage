@@ -241,11 +241,10 @@ export class LocalJsonLock implements ILockingManager {
       'forceReleaseLock',
       async () => {
         await this.initialize();
-        if (!this.locks[path]) {
-          return true;
+        if (this.locks[path]) {
+          delete this.locks[path];
+          await this.saveToFile();
         }
-        delete this.locks[path];
-        await this.saveToFile();
         return true;
       },
       { path },
