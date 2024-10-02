@@ -143,9 +143,9 @@ export class DynamoDBLock implements ILockingManager {
       },
       {
         'lock.path': path,
-        'lock.timeout': options.timeout,
-        'lock.retries': options.retries,
-        'lock.retries.delay': options.retryDelay,
+        'lock.timeout': timeout,
+        'lock.retries': retries,
+        'lock.retries.delay': retryDelay,
       },
     );
   }
