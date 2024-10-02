@@ -11,7 +11,7 @@ import { AWSCredentials } from '../../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
 import { dateToUnixTimestampInSeconds, delay, unixTimestampInSecondsToDate } from "../../utils";
-import { isLockExpired } from "../utils";
+import { isLockExpired, setSpanLockAcquiredStatus } from "../utils";
 
 /**
  * Implements a distributed locking mechanism using AWS DynamoDB with OpenTelemetry instrumentation.
@@ -105,6 +105,7 @@ export class DynamoDBLock implements ILockingManager {
 
         const result = await this.tryAcquireLock(path, timeout, metadata);
         if (result.success) {
+          setSpanLockAcquiredStatus(true)
           return result;
         }
 
@@ -112,7 +113,7 @@ export class DynamoDBLock implements ILockingManager {
           await delay(retryDelay);
         }
       }
-
+      setSpanLockAcquiredStatus(false)
       return { success: false, error: 'Failed to acquire lock after retries' };
     }, { path, ...options });
   }

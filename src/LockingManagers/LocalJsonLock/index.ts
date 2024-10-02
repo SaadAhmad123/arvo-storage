@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
-import { isLockExpired } from '../utils';
+import { isLockExpired, setSpanLockAcquiredStatus } from '../utils';
 
 /**
  * Implements a file-based locking mechanism using JSON for persistence.
@@ -187,6 +187,9 @@ export class LocalJsonLock implements ILockingManager {
               metadata,
             };
             await this.saveToFile();
+            
+            setSpanLockAcquiredStatus(true)
+
             return {
               success: true,
               lockId: lockId,
@@ -197,6 +200,7 @@ export class LocalJsonLock implements ILockingManager {
             await new Promise((resolve) => setTimeout(resolve, retryDelay));
           }
         }
+        setSpanLockAcquiredStatus(false)
         return {
           success: false,
           error: 'Failed to acquire lock after retries',
