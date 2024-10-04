@@ -1,6 +1,6 @@
+import { telemetrySdkStart, telemetrySdkStop } from '../../utils';
 import fs from 'fs/promises';
 import path from 'path';
-import { telemetrySdkStart, telemetrySdkStop } from '../../utils';
 import { LocalJsonLock } from '../../../src';
 
 describe('LocalJsonLock', () => {

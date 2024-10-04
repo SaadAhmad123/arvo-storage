@@ -1,7 +1,7 @@
+import { telemetrySdkStart, telemetrySdkStop } from '../../utils';
 import { DynamoDBLock } from '../../../src';
 import { v4 as uuidv4 } from 'uuid';
 import * as dotenv from 'dotenv';
-import { telemetrySdkStart, telemetrySdkStop } from '../../utils';
 dotenv.config();
 
 describe('DynamoDBLock', () => {

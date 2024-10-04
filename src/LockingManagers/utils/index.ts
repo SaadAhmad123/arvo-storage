@@ -1,4 +1,3 @@
-import { trace, Span } from '@opentelemetry/api';
 import { LockInfo } from '../types';
 import { setSpanAttributes } from '../../OpenTelemetry';
 
@@ -34,27 +33,3 @@ export function isLockExpired(lock: LockInfo): boolean {
   }
   return new Date(lock.expiresAt) <= new Date();
 }
-
-/**
- * Sets the lock acquisition status as an attribute on the active OpenTelemetry span.
- *
- * This function is used to record the success or failure of a lock acquisition attempt
- * in the current tracing context.
- *
- * @param status - A boolean indicating whether the lock was successfully acquired.
- *
- * @example
- * // After attempting to acquire a lock
- * const lockAcquired = await tryAcquireLock();
- * setSpanLockAcquiredStatus(lockAcquired);
- *
- * @remarks
- * - This function relies on the OpenTelemetry API to access the current active span.
- * - If no active span is found, this function will silently do nothing.
- * - The attribute set is 'lock.acquired.success' with a boolean value.
- * - This function is typically used within a larger tracing context to provide
- *   detailed information about lock acquisition operations.
- */
-export const setSpanLockAcquiredStatus = (status: boolean): void => {
-  setSpanAttributes({ 'lock.acquire.success': status });
-};

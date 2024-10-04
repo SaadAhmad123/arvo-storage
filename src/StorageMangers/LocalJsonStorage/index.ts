@@ -98,7 +98,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         code: SpanStatusCode.ERROR,
         message: (error as Error).message,
       });
-      exceptionToSpan(error as Error);
+      exceptionToSpan(error as Error, span);
       throw error;
     } finally {
       span.end();

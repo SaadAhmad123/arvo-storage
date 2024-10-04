@@ -3,8 +3,8 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
-import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
-import { isLockExpired, setSpanLockAcquiredStatus } from '../utils';
+import { ArvoStorageTracer, exceptionToSpan, logToSpan } from '../../OpenTelemetry';
+import { isLockExpired } from '../utils';
 import { lockingManagerOTelAttributes } from '../utils/otel.attributes';
 
 /**
@@ -62,7 +62,7 @@ export class LocalJsonLock implements ILockingManager {
         code: SpanStatusCode.ERROR,
         message: (error as Error).message,
       });
-      span.recordException(error as Error);
+      exceptionToSpan(error as Error, span);
       throw error;
     } finally {
       span.end();
@@ -194,7 +194,7 @@ export class LocalJsonLock implements ILockingManager {
             };
             await this.saveToFile();
 
-            setSpanLockAcquiredStatus(true);
+            lockingManagerOTelAttributes.lockAcquiredSuccess(true);
 
             return {
               success: true,
@@ -206,7 +206,7 @@ export class LocalJsonLock implements ILockingManager {
             await new Promise((resolve) => setTimeout(resolve, retryDelay));
           }
         }
-        setSpanLockAcquiredStatus(false);
+        lockingManagerOTelAttributes.lockAcquiredSuccess(false);
         return {
           success: false,
           error: 'Failed to acquire lock after retries',

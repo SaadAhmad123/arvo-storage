@@ -15,4 +15,5 @@ export const lockingManagerOTelAttributes = {
   }),
   getLockInfo: (path: string) => ({ 'lock.path': path }),
   isLocked: (path: string) => ({ 'lock.path': path }),
+  lockAcquiredSuccess: (success: boolean) => ({'lock.acquire.success': success})
 };

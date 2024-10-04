@@ -13,6 +13,7 @@ import { AWSCredentials } from '../../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import {
   ArvoStorageTracer,
+  exceptionToSpan,
   logToSpan,
   setSpanAttributes,
 } from '../../OpenTelemetry';
@@ -21,7 +22,7 @@ import {
   delay,
   unixTimestampInSecondsToDate,
 } from '../../utils';
-import { isLockExpired, setSpanLockAcquiredStatus } from '../utils';
+import { isLockExpired } from '../utils';
 import { executeDynamoDBCommandWithOTel } from '../../utils/dynamodb';
 import { lockingManagerOTelAttributes } from '../utils/otel.attributes';
 
@@ -101,7 +102,7 @@ export class DynamoDBLock implements ILockingManager {
         code: SpanStatusCode.ERROR,
         message: (error as Error).message,
       });
-      span.recordException(error as Error);
+      exceptionToSpan(error as Error, span);
       throw error;
     } finally {
       span.end();
@@ -135,7 +136,7 @@ export class DynamoDBLock implements ILockingManager {
 
           const result = await this.tryAcquireLock(path, timeout, metadata);
           if (result.success) {
-            setSpanLockAcquiredStatus(true);
+            lockingManagerOTelAttributes.lockAcquiredSuccess(true);
             return result;
           }
 
@@ -143,7 +144,7 @@ export class DynamoDBLock implements ILockingManager {
             await delay(retryDelay);
           }
         }
-        setSpanLockAcquiredStatus(false);
+        lockingManagerOTelAttributes.lockAcquiredSuccess(false);
         return {
           success: false,
           error: 'Failed to acquire lock after retries',
