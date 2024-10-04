@@ -5,6 +5,7 @@ import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { ArvoStorageTracer, logToSpan } from '../../OpenTelemetry';
 import { isLockExpired, setSpanLockAcquiredStatus } from '../utils';
+import { lockingManagerOTelAttributes } from '../utils/otel.attributes';
 
 /**
  * Implements a file-based locking mechanism using JSON for persistence.
@@ -152,7 +153,7 @@ export class LocalJsonLock implements ILockingManager {
           })
         );
       },
-      { lock_key: path },
+      lockingManagerOTelAttributes.isLocked(path),
     );
   }
 
@@ -211,12 +212,12 @@ export class LocalJsonLock implements ILockingManager {
           error: 'Failed to acquire lock after retries',
         };
       },
-      {
-        'lock.path': path,
-        'lock.timeout': timeout,
-        'lock.retries': retries,
-        'lock.retries.delay': retryDelay,
-      },
+      lockingManagerOTelAttributes.acquireLock(path, {
+        timeout,
+        retries,
+        retryDelay,
+        metadata,
+      }),
     );
   }
 
@@ -241,7 +242,7 @@ export class LocalJsonLock implements ILockingManager {
         await this.saveToFile();
         return true;
       },
-      { 'lock.path': path },
+      lockingManagerOTelAttributes.releaseLock(path, lockId),
     );
   }
 
@@ -261,7 +262,7 @@ export class LocalJsonLock implements ILockingManager {
         }
         return true;
       },
-      { 'lock.path': path },
+      lockingManagerOTelAttributes.forceReleaseLock(path),
     );
   }
 
@@ -291,7 +292,7 @@ export class LocalJsonLock implements ILockingManager {
         await this.saveToFile();
         return true;
       },
-      { 'lock.path': path, 'lock.timeout.extension': duration },
+      lockingManagerOTelAttributes.extendLock(path, lockId, duration),
     );
   }
 
@@ -319,7 +320,7 @@ export class LocalJsonLock implements ILockingManager {
         }
         return lock;
       },
-      { 'lock.path': path },
+      lockingManagerOTelAttributes.getLockInfo(path),
     );
   }
 }

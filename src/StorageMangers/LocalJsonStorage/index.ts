@@ -3,7 +3,11 @@ import fs from 'fs/promises';
 import path from 'path';
 import { IStorageManager } from '../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
-import { ArvoStorageTracer, exceptionToSpan } from '../../OpenTelemetry';
+import {
+  ArvoStorageTracer,
+  exceptionToSpan,
+  setSpanAttributes,
+} from '../../OpenTelemetry';
 
 /**
  * A storage manager that uses a JSON file as its database.
@@ -186,7 +190,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         this.data[path] = validated;
         await this.saveToFile();
       },
-      { path, 'data.size': JSON.stringify(data).length },
+      { 'data.key': path, 'data.size': JSON.stringify(data).length },
     );
   }
 
@@ -216,12 +220,13 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
       async () => {
         await this.initialize();
         const storedData = this.data[path];
+        setSpanAttributes({ 'data.found': Boolean(storedData) });
         if (storedData === undefined) {
           return defaultValue;
         }
         return this.schema.parse(storedData);
       },
-      { path, default_value_used: defaultValue !== null },
+      { 'data.key': path },
     );
   }
 
@@ -244,9 +249,16 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
       async () => {
         await this.initialize();
         const keys = Object.keys(this.data);
-        return keys.slice(start, start + count);
+        const result = keys.slice(start, start + count);
+        setSpanAttributes({
+          'data.key.list.fetch.count': result.length,
+        });
+        return result;
       },
-      { start, count },
+      {
+        'data.key.list.query.start': start,
+        'data.key.list.query.count': count,
+      },
     );
   }
 
@@ -285,10 +297,12 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
       'delete',
       async () => {
         await this.initialize();
-        delete this.data[path];
-        await this.saveToFile();
+        if (this.data[path]) {
+          delete this.data[path];
+          await this.saveToFile();
+        }
       },
-      { path },
+      { 'data.key': path },
     );
   }
 
@@ -314,7 +328,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         await this.initialize();
         return path in this.data;
       },
-      { path },
+      { 'data.key': path },
     );
   }
 }

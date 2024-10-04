@@ -56,5 +56,5 @@ export function isLockExpired(lock: LockInfo): boolean {
  *   detailed information about lock acquisition operations.
  */
 export const setSpanLockAcquiredStatus = (status: boolean): void => {
-  setSpanAttributes({'lock.acquire.success': status})
+  setSpanAttributes({ 'lock.acquire.success': status });
 };

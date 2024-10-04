@@ -58,6 +58,8 @@ export const exceptionToSpan = (
   }
 };
 
-export const setSpanAttributes = (attributes: Record<string, AttributeValue | undefined>) => {
-  trace.getActiveSpan()?.setAttributes(attributes)
-}
+export const setSpanAttributes = (
+  attributes: Record<string, AttributeValue | undefined>,
+) => {
+  trace.getActiveSpan()?.setAttributes(attributes);
+};
