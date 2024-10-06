@@ -8,6 +8,7 @@ import {
   exceptionToSpan,
   setSpanAttributes,
 } from '../../OpenTelemetry';
+import { storageManagerOtelAttributes } from '../utils/otel.attributes';
 
 /**
  * A storage manager that uses a JSON file as its database.
@@ -190,7 +191,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         this.data[path] = validated;
         await this.saveToFile();
       },
-      { 'data.key': path, 'data.size': JSON.stringify(data).length },
+      storageManagerOtelAttributes.write(path, data),
     );
   }
 
@@ -226,7 +227,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         }
         return this.schema.parse(storedData);
       },
-      { 'data.key': path },
+      storageManagerOtelAttributes.read(path)
     );
   }
 
@@ -255,10 +256,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         });
         return result;
       },
-      {
-        'data.key.list.query.start': start,
-        'data.key.list.query.count': count,
-      },
+      storageManagerOtelAttributes.list(start, count)
     );
   }
 
@@ -302,7 +300,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
           await this.saveToFile();
         }
       },
-      { 'data.key': path },
+      storageManagerOtelAttributes.delete(path)
     );
   }
 
@@ -328,7 +326,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         await this.initialize();
         return path in this.data;
       },
-      { 'data.key': path },
+      storageManagerOtelAttributes.exists(path)
     );
   }
 }
