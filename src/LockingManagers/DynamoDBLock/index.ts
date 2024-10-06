@@ -9,7 +9,7 @@ import {
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { v4 as uuidv4 } from 'uuid';
 import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
-import { AWSCredentials, IAWSResource } from '../../types';
+import { IAWSResource } from '../../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import {
   ArvoStorageTracer,
@@ -23,7 +23,7 @@ import {
   unixTimestampInSecondsToDate,
 } from '../../utils';
 import { isLockExpired } from '../utils';
-import { executeDynamoDBCommandWithOTel } from '../../utils/dynamodb';
+import { defaultHashKey, executeDynamoDBCommandWithOTel } from '../../utils/dynamodb';
 import { lockingManagerOTelAttributes } from '../utils/otel.attributes';
 import { IDynamoDBLockConfig } from './types';
 import { defaultLockConfiguration } from '../utils/defaultLockConfiguration';
@@ -38,7 +38,7 @@ import { DefaultLockConfiguration } from '../utils/defaultLockConfiguration/type
 export class DynamoDBLock implements ILockingManager {
   private readonly client: DynamoDBClient;
   public readonly tableName: string;
-  public readonly hashKey: string = 'path_key';
+  public readonly hashKey: string = defaultHashKey;
   public readonly defaultLockConfiguration: DefaultLockConfiguration = defaultLockConfiguration;
 
   /**
@@ -64,7 +64,6 @@ export class DynamoDBLock implements ILockingManager {
           : {}),
       } as any,
     });
-    
   }
 
   /**
@@ -83,7 +82,7 @@ export class DynamoDBLock implements ILockingManager {
     attributes: Record<string, any> = {},
   ): Promise<T> {
     const span = ArvoStorageTracer.startSpan(
-      `DynamoDBLockManager.${operation}`,
+      `DynamoDBLock.${operation}`,
       {
         attributes: {
           ...attributes,

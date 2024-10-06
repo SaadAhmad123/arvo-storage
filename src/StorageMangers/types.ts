@@ -116,45 +116,6 @@ export interface IStorageManager<
   ): Promise<z.infer<TDataSchema> | null>;
 
   /**
-   * Lists the keys stored in the storage system or database with pagination support.
-   *
-   * @param start - The starting index for pagination (0-based).
-   * @param count - The number of keys to retrieve.
-   * @returns A promise resolving to an array of storage keys.
-   * @throws {Error} If the listing operation fails.
-   *
-   * @example
-   * ```typescript
-   * try {
-   *   // Get keys 50-69 (20 items starting at index 50)
-   *   const keys = await userStorage.list(50, 20);
-   *   console.log(`Found ${keys.length} keys:`, keys);
-   * } catch (error) {
-   *   console.error('Failed to list keys:', error);
-   * }
-   * ```
-   */
-  list(start: number, count: number): Promise<string[]>;
-
-  /**
-   * Returns the total count of all keys stored in the storage system or database.
-   *
-   * @returns A promise resolving to the total number of stored keys.
-   * @throws {Error} If the counting operation fails.
-   *
-   * @example
-   * ```typescript
-   * try {
-   *   const total = await userStorage.count();
-   *   console.log(`Total number of stored items: ${total}`);
-   * } catch (error) {
-   *   console.error('Failed to get count:', error);
-   * }
-   * ```
-   */
-  count(): Promise<number>;
-
-  /**
    * Deletes data from a specified storage path.
    *
    * @param path - The path from which to delete the data.

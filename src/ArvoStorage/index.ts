@@ -302,49 +302,6 @@ export default class ArvoStorage<
   }
 
   /**
-   * Lists all stored paths with pagination support.
-   *
-   * @param options - Pagination options
-   * @returns Promise resolving to an array of paths and total count
-   */
-  async list(options: {
-    start?: number;
-    count?: number;
-    prefix?: string;
-  }): Promise<{
-    paths: string[];
-    totalCount: number;
-  }> {
-    const { start = 0, count = 100, prefix } = options;
-
-    return this.executeTraced('list', prefix || '*', async (span) => {
-      span.setAttributes({
-        'arvo.storage.list.start': start,
-        'arvo.storage.list.count': count,
-        'arvo.storage.list.prefix': prefix || '*',
-      });
-
-      const [paths, totalCount] = await Promise.all([
-        this.storageManager.list(start, count),
-        this.storageManager.count(),
-      ]);
-
-      const filteredPaths = prefix
-        ? paths.filter((path) => path.startsWith(prefix))
-        : paths;
-
-      span.setAttributes({
-        'arvo.storage.list.returned_count': filteredPaths.length,
-      });
-
-      return {
-        paths: filteredPaths,
-        totalCount,
-      };
-    });
-  }
-
-  /**
    * Ensures that the locking manager is available.
    *
    * @private

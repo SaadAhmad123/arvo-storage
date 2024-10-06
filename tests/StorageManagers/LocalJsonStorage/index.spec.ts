@@ -24,7 +24,12 @@ describe('LocalJsonStorage', () => {
 
   beforeEach(async () => {
     testFilePath = path.join(os.tmpdir(), `test-storage-${Date.now()}.json`);
-    storage = new LocalJsonStorage(testFilePath, testSchema);
+    storage = new LocalJsonStorage({
+      config: {
+        filePath: testFilePath,
+        schema: testSchema
+      }
+    });
   });
 
   afterEach(async () => {
@@ -50,32 +55,6 @@ describe('LocalJsonStorage', () => {
     };
     const readData = await storage.read('non-existent', defaultValue);
     expect(readData).toEqual(defaultValue);
-  });
-
-  test('list keys', async () => {
-    await storage.write(
-      { id: '1', name: 'Alice', email: 'alice@example.com' },
-      'users/1',
-    );
-    await storage.write(
-      { id: '2', name: 'Bob', email: 'bob@example.com' },
-      'users/2',
-    );
-    const keys = await storage.list(0, 10);
-    expect(keys).toEqual(['users/1', 'users/2']);
-  });
-
-  test('count items', async () => {
-    await storage.write(
-      { id: '1', name: 'Alice', email: 'alice@example.com' },
-      'users/1',
-    );
-    await storage.write(
-      { id: '2', name: 'Bob', email: 'bob@example.com' },
-      'users/2',
-    );
-    const count = await storage.count();
-    expect(count).toBe(2);
   });
 
   test('delete item', async () => {
@@ -111,7 +90,12 @@ describe('LocalJsonStorage', () => {
     );
 
     // Create a new instance with the same file
-    const newStorage = new LocalJsonStorage(testFilePath, testSchema);
+    const newStorage = new LocalJsonStorage({
+      config: {
+        filePath: testFilePath, 
+        schema: testSchema,
+      }
+    });
     const readData = await newStorage.read('users/1', null);
     expect(readData).toEqual({
       id: '1',

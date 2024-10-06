@@ -14,13 +14,13 @@ describe('DynamoDBLock', () => {
   });
 
   let lockManager: DynamoDBLock;
-  const tableName = process.env.AWS_LOCK_TABLE_NAME || '';
+  const tableName = process.env.AWS_LOCK_TABLE_NAME!;
 
   beforeAll(() => {
     const credentials = {
-      awsAccessKey: process.env.AWS_ACCESS_KEY,
-      awsSecretKey: process.env.AWS_SECRET_KEY,
-      awsRegion: process.env.AWS_REGION || 'ap-southeast-2',
+      awsAccessKey: process.env.AWS_ACCESS_KEY!,
+      awsSecretKey: process.env.AWS_SECRET_KEY!,
+      awsRegion: process.env.AWS_REGION ?? 'ap-southeast-2',
     };
     lockManager = new DynamoDBLock({
       config: {

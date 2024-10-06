@@ -9,6 +9,7 @@ import {
   setSpanAttributes,
 } from '../../OpenTelemetry';
 import { storageManagerOtelAttributes } from '../utils/otel.attributes';
+import { ILocalJsonStorage } from './types';
 
 /**
  * A storage manager that uses a JSON file as its database.
@@ -28,7 +29,10 @@ import { storageManagerOtelAttributes } from '../utils/otel.attributes';
  *   email: z.string().email(),
  * });
  *
- * const storage = new LocalJsonStorageManager<typeof userSchema>('./users.json', userSchema);
+ * const storage = new LocalJsonStorageManager({
+ *  filePath: './users.json', 
+ *  schema: userSchema
+ * });
  *
  * await storage.write({ id: '123', name: 'Alice', email: 'alice@example.com' }, 'users/123');
  * const user = await storage.read('users/123', null);
@@ -46,23 +50,11 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
    *
    * @param filePath - The path to the JSON file to use as storage. If the file doesn't exist, it will be created.
    * @param schema - The Zod schema for validating data. This schema defines the structure and validation rules for the stored data.
-   *
    * @throws {Error} If the file path is invalid or inaccessible.
-   *
-   * @example
-   * ```typescript
-   * const userSchema = z.object({
-   *   id: z.string().uuid(),
-   *   name: z.string().min(1),
-   *   email: z.string().email(),
-   * });
-   *
-   * const storage = new LocalJsonStorageManager('./users.json', userSchema);
-   * ```
    */
-  constructor(filePath: string, schema: TDataSchema) {
-    this.filePath = path.resolve(filePath);
-    this.schema = schema;
+  constructor(param: ILocalJsonStorage<TDataSchema>) {
+    this.filePath = path.resolve(param.config.filePath);
+    this.schema = param.config.schema;
   }
 
   /**
@@ -229,54 +221,6 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
       },
       storageManagerOtelAttributes.read(path)
     );
-  }
-
-  /**
-   * Lists keys in the storage with pagination support.
-   *
-   * @param start - The starting index for pagination (0-based).
-   * @param count - The number of keys to retrieve.
-   * @returns An array of keys (paths) in the storage.
-   * @throws {Error} If the list operation fails.
-   *
-   * @example
-   * ```typescript
-   * const keys = await storage.list(0, 10); // Get the first 10 keys
-   * ```
-   */
-  async list(start: number, count: number): Promise<string[]> {
-    return this.executeTraced(
-      'list',
-      async () => {
-        await this.initialize();
-        const keys = Object.keys(this.data);
-        const result = keys.slice(start, start + count);
-        setSpanAttributes({
-          'data.key.list.fetch.count': result.length,
-        });
-        return result;
-      },
-      storageManagerOtelAttributes.list(start, count)
-    );
-  }
-
-  /**
-   * Counts the total number of items in the storage.
-   *
-   * @returns The total number of items stored.
-   * @throws {Error} If the count operation fails.
-   *
-   * @example
-   * ```typescript
-   * const totalItems = await storage.count();
-   * console.log(`Total items: ${totalItems}`);
-   * ```
-   */
-  async count(): Promise<number> {
-    return this.executeTraced('count', async () => {
-      await this.initialize();
-      return Object.keys(this.data).length;
-    });
   }
 
   /**
