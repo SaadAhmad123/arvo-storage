@@ -9,7 +9,7 @@ import {
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { v4 as uuidv4 } from 'uuid';
 import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
-import { AWSCredentials } from '../../types';
+import { AWSCredentials, IAWSResource } from '../../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import {
   ArvoStorageTracer,
@@ -25,6 +25,9 @@ import {
 import { isLockExpired } from '../utils';
 import { executeDynamoDBCommandWithOTel } from '../../utils/dynamodb';
 import { lockingManagerOTelAttributes } from '../utils/otel.attributes';
+import { IDynamoDBLockConfig } from './types';
+import { defaultLockConfiguration } from '../utils/defaultLockConfiguration';
+import { DefaultLockConfiguration } from '../utils/defaultLockConfiguration/types';
 
 /**
  * Implements a distributed locking mechanism using AWS DynamoDB with OpenTelemetry instrumentation.
@@ -34,33 +37,34 @@ import { lockingManagerOTelAttributes } from '../utils/otel.attributes';
  */
 export class DynamoDBLock implements ILockingManager {
   private readonly client: DynamoDBClient;
+  public readonly tableName: string;
+  public readonly hashKey: string = 'path_key';
+  public readonly defaultLockConfiguration: DefaultLockConfiguration = defaultLockConfiguration;
 
   /**
    * Creates an instance of DynamoDBLock.
-   * @param tableName - The name of the DynamoDB table used for lock storage.
-   * @param credentials - AWS credentials and configuration. If not provided, defaults to environment variables or IAM roles.
-   * @param [primaryKey='path_key'] - The name of the primary key column in the DynamoDB table.
    */
   constructor(
-    public readonly tableName: string,
-    private readonly credentials: AWSCredentials,
-    public readonly primaryKey: string = 'path_key',
+    param: IAWSResource<IDynamoDBLockConfig>
   ) {
+    this.tableName = param.config.tableName;
+    this.hashKey = param.config.hashKey ?? this.hashKey;
+    this.defaultLockConfiguration = param.config.defaultLockConfiguration ?? this.defaultLockConfiguration
     this.client = new DynamoDBClient({
-      region: credentials.awsRegion ?? 'ap-southeast-2',
+      region: param.credentials?.awsRegion ?? 'ap-southeast-2',
       credentials: {
-        ...(credentials.awsAccessKey
-          ? { accessKeyId: credentials.awsAccessKey }
+        ...(param.credentials?.awsAccessKey
+          ? { accessKeyId: param.credentials?.awsAccessKey }
           : {}),
-        ...(credentials.awsSecretKey
-          ? { secretAccessKey: credentials.awsSecretKey }
+        ...(param.credentials?.awsSecretKey
+          ? { secretAccessKey: param.credentials?.awsSecretKey }
           : {}),
-        ...(credentials.awsSessionToken
-          ? { sessionToken: credentials.awsSessionToken }
+        ...(param.credentials?.awsSessionToken
+          ? { sessionToken: param.credentials?.awsSessionToken }
           : {}),
       } as any,
     });
-    this.tableName = tableName;
+    
   }
 
   /**
@@ -120,9 +124,9 @@ export class DynamoDBLock implements ILockingManager {
     options: LockOptions = {},
   ): Promise<LockResult> {
     const {
-      timeout = 30000,
-      retries = 2,
-      retryDelay = 1000,
+      timeout = this.defaultLockConfiguration.timeout,
+      retries = this.defaultLockConfiguration.retries,
+      retryDelay = this.defaultLockConfiguration.retryDelay,
       metadata = {},
     } = options;
     return this.executeTraced(
@@ -193,13 +197,13 @@ export class DynamoDBLock implements ILockingManager {
     const command = new PutItemCommand({
       TableName: this.tableName,
       Item: marshall({
-        [this.primaryKey]: path,
+        [this.hashKey]: path,
         lockId,
         acquiredAt: dateToUnixTimestampInSeconds(acquiredAt),
         expiresAt: dateToUnixTimestampInSeconds(expiresAt),
         metadata,
       }),
-      ConditionExpression: `attribute_not_exists(${this.primaryKey})`,
+      ConditionExpression: `attribute_not_exists(${this.hashKey})`,
       ReturnConsumedCapacity: 'INDEXES',
     });
     return await executeDynamoDBCommandWithOTel(this.client, command);
@@ -221,7 +225,7 @@ export class DynamoDBLock implements ILockingManager {
       async () => {
         const params: any = {
           TableName: this.tableName,
-          Key: marshall({ [this.primaryKey]: path }),
+          Key: marshall({ [this.hashKey]: path }),
         };
 
         if (lockId) {
@@ -234,10 +238,10 @@ export class DynamoDBLock implements ILockingManager {
             this.client,
             new DeleteItemCommand(params),
           );
-          setSpanAttributes({ 'lock.release.success': true });
+          setSpanAttributes(lockingManagerOTelAttributes.lockReleaseSuccess(true));
           return true;
         } catch (error) {
-          setSpanAttributes({ 'lock.release.success': false });
+          setSpanAttributes(lockingManagerOTelAttributes.lockReleaseSuccess(false));
           if ((error as any).name === 'ConditionalCheckFailedException') {
             return false;
           } else {
@@ -263,13 +267,14 @@ export class DynamoDBLock implements ILockingManager {
             this.client,
             new DeleteItemCommand({
               TableName: this.tableName,
-              Key: marshall({ [this.primaryKey]: path }),
+              Key: marshall({ [this.hashKey]: path }),
               ReturnConsumedCapacity: 'INDEXES',
             }),
           );
+          setSpanAttributes(lockingManagerOTelAttributes.lockForceReleaseSuccess(true));
           return true;
         } catch (e) {
-          setSpanAttributes({ 'lock.release.force.success': false });
+          setSpanAttributes(lockingManagerOTelAttributes.lockForceReleaseSuccess(false));
           throw e;
         }
       },
@@ -311,7 +316,7 @@ export class DynamoDBLock implements ILockingManager {
         try {
           const command = new UpdateItemCommand({
             TableName: this.tableName,
-            Key: marshall({ [this.primaryKey]: path }),
+            Key: marshall({ [this.hashKey]: path }),
             UpdateExpression: 'SET expiresAt = :newExpiresAt',
             ConditionExpression:
               'lockId = :lockId AND expiresAt = :currentExpiresAt',
@@ -325,9 +330,10 @@ export class DynamoDBLock implements ILockingManager {
             ReturnConsumedCapacity: 'INDEXES',
           });
           await executeDynamoDBCommandWithOTel(this.client, command);
+          setSpanAttributes(lockingManagerOTelAttributes.lockExtensionSuccess(true))
           return true;
         } catch (error) {
-          setSpanAttributes({ 'lock.timeout.extension.success': true });
+          setSpanAttributes(lockingManagerOTelAttributes.lockExtensionSuccess(false));
           if ((error as any).name === 'ConditionalCheckFailedException') {
             // The lock was modified or released between our check and update
             return false;
@@ -352,7 +358,7 @@ export class DynamoDBLock implements ILockingManager {
       async () => {
         const command = new GetItemCommand({
           TableName: this.tableName,
-          Key: marshall({ [this.primaryKey]: path }),
+          Key: marshall({ [this.hashKey]: path }),
           ReturnConsumedCapacity: 'INDEXES',
         });
 

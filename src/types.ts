@@ -36,6 +36,27 @@ export type AWSCredentials = {
   awsSessionToken?: string;
 };
 
+
+/**
+ * Represents an AWS resource with its configuration and credentials.
+ * This interface is generic, allowing for flexible configuration types.
+ * 
+ * @template TConfig - The type of the configuration object, which must be a record with string keys and any value types.
+ */
+export interface IAWSResource<TConfig extends Record<string, any>> {
+  /**
+   * The configuration object for the AWS resource.
+   * This can contain any resource-specific settings or parameters.
+   */
+  config: TConfig;
+
+  /**
+   * The AWS credentials required to access the resource.
+   * This includes access keys, region, and optional session token.
+   */
+  credentials?: AWSCredentials;
+}
+
 /**
  * Represents the credentials and configuration required for Azure Blob Storage access.
  * This interface provides the necessary information to connect to and interact with

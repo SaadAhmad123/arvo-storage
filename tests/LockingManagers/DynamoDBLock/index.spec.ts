@@ -22,7 +22,12 @@ describe('DynamoDBLock', () => {
       awsSecretKey: process.env.AWS_SECRET_KEY,
       awsRegion: process.env.AWS_REGION || 'ap-southeast-2',
     };
-    lockManager = new DynamoDBLock(tableName, credentials);
+    lockManager = new DynamoDBLock({
+      config: {
+        tableName: tableName,
+      },
+      credentials,
+    });
   });
 
   test('acquireLock should successfully acquire a lock', async () => {

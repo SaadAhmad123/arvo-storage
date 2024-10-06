@@ -17,7 +17,11 @@ describe('LocalJsonLock', () => {
 
   beforeEach(async () => {
     testFilePath = path.join(`.test_files`, `locks.json`);
-    lockManager = new LocalJsonLock(testFilePath);
+    lockManager = new LocalJsonLock({
+      config: {
+        filePath: testFilePath
+      }
+    });
   });
 
   afterEach(async () => {
@@ -116,7 +120,11 @@ describe('LocalJsonLock', () => {
     await lockManager.acquireLock('test-path');
 
     // Create a new instance with the same file
-    const newLockManager = new LocalJsonLock(testFilePath);
+    const newLockManager = new LocalJsonLock({
+      config: {
+        filePath: testFilePath
+      }
+    });
     const isLocked = await newLockManager.isLocked('test-path');
     expect(isLocked).toBe(true);
   });
