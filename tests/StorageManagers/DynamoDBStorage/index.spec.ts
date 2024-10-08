@@ -1,3 +1,4 @@
+import { telemetrySdkStart, telemetrySdkStop } from '../../utils';
 import { z } from 'zod';
 import { IAWSResource, IDynamoDBStorage, DynamoDBStorage } from '../../../src';
 import * as dotenv from 'dotenv';
@@ -31,6 +32,15 @@ const config: IAWSResource<IDynamoDBStorage<typeof testSchema>> = {
 const storage = new DynamoDBStorage(config);
 
 describe('DynamoDBStorage', () => {
+
+  beforeAll(() => {
+    telemetrySdkStart();
+  });
+
+  afterAll(() => {
+    telemetrySdkStop();
+  });  
+
   const testData: TestData = {
     id: 'test-id-' + Date.now(),
     name: 'Test User',
