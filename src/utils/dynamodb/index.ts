@@ -58,9 +58,9 @@ export const executeDynamoDBCommandWithOTel = async (
 
 /**
  * The default hash key (partition key) used for DynamoDB tables in the storage system.
- * 
+ *
  * This constant defines the standard name for the primary key in DynamoDB tables
  * used by the storage system. It is used as the default value when a custom
  * hash key is not specified in the storage configuration.
  */
-export const defaultHashKey = "path_key";
+export const defaultHashKey = 'path_key';

@@ -36,11 +36,10 @@ export type AWSCredentials = {
   awsSessionToken?: string;
 };
 
-
 /**
  * Represents an AWS resource with its configuration and credentials.
  * This interface is generic, allowing for flexible configuration types.
- * 
+ *
  * @template TConfig - The type of the configuration object, which must be a record with string keys and any value types.
  */
 export interface IAWSResource<TConfig extends Record<string, any>> {
@@ -68,9 +67,9 @@ export interface IAzureBlobStorageCredentials {
    * This string includes all the authentication information required for your application
    * to access data in Azure Blob Storage. It can be found in the Azure portal under the
    * "Access keys" section of your storage account.
-   * 
+   *
    * @example "DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=accountkey123==;EndpointSuffix=core.windows.net"
-   * 
+   *
    * @remark
    * **Note**: This string contains sensitive information. Ensure it's stored securely
    * and not exposed in your source code or public repositories.
@@ -80,13 +79,13 @@ export interface IAzureBlobStorageCredentials {
   /**
    * The name of the container within the Azure Blob Storage where blobs (files) will
    * be stored, read, and deleted.
-   * 
+   *
    * Containers act like folders in Azure Blob Storage and provide a way to organize
    * sets of blobs. The container name must be lowercase, between 3-63 characters long,
    * and can contain only letters, numbers, and the dash (-) character.
-   * 
+   *
    * @example "my-container"
-   * 
+   *
    * @remarks If the specified container doesn't exist, your application should be
    * prepared to create it before performing any operations, or handle any resulting errors.
    */

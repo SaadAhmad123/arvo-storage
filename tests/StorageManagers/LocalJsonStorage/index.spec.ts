@@ -27,8 +27,8 @@ describe('LocalJsonStorage', () => {
     storage = new LocalJsonStorage({
       config: {
         filePath: testFilePath,
-        schema: testSchema
-      }
+        schema: testSchema,
+      },
     });
   });
 
@@ -92,9 +92,9 @@ describe('LocalJsonStorage', () => {
     // Create a new instance with the same file
     const newStorage = new LocalJsonStorage({
       config: {
-        filePath: testFilePath, 
+        filePath: testFilePath,
         schema: testSchema,
-      }
+      },
     });
     const readData = await newStorage.read('users/1', null);
     expect(readData).toEqual({

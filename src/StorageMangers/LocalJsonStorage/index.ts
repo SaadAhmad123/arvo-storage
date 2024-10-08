@@ -5,6 +5,7 @@ import { IStorageManager } from '../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import {
   ArvoStorageTracer,
+  createExecutionTracer,
   exceptionToSpan,
   setSpanAttributes,
 } from '../../OpenTelemetry';
@@ -30,7 +31,7 @@ import { ILocalJsonStorage } from './types';
  * });
  *
  * const storage = new LocalJsonStorageManager({
- *  filePath: './users.json', 
+ *  filePath: './users.json',
  *  schema: userSchema
  * });
  *
@@ -44,6 +45,9 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
   private readonly filePath: string;
   private data: Record<string, unknown> = {};
   public readonly schema: TDataSchema;
+  private executeTraced = createExecutionTracer({
+    name: 'LocalJsonStorage',
+  });
 
   /**
    * Creates a new LocalJsonStorageManager instance.
@@ -55,47 +59,6 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
   constructor(param: ILocalJsonStorage<TDataSchema>) {
     this.filePath = path.resolve(param.config.filePath);
     this.schema = param.config.schema;
-  }
-
-  /**
-   * Creates a traced execution context for storage operations.
-   *
-   * This method wraps operations with OpenTelemetry instrumentation, providing
-   * observability into the performance and behavior of storage operations.
-   *
-   * @private
-   * @param operation - The name of the operation being traced.
-   * @param action - The async function to be executed within the traced context.
-   * @param attributes - Additional attributes to be added to the span for more detailed tracing.
-   * @returns A promise that resolves with the result of the action.
-   * @throws {Error} Rethrows any error that occurs during the operation, after recording it in the span.
-   */
-  private async executeTraced<T>(
-    operation: string,
-    action: () => Promise<T>,
-    attributes: Record<string, any> = {},
-  ): Promise<T> {
-    const span = ArvoStorageTracer.startSpan(`LocalJsonStorage.${operation}`, {
-      attributes,
-    });
-
-    try {
-      const result = await context.with(
-        trace.setSpan(context.active(), span),
-        action,
-      );
-      span.setStatus({ code: SpanStatusCode.OK });
-      return result;
-    } catch (error) {
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: (error as Error).message,
-      });
-      exceptionToSpan(error as Error, span);
-      throw error;
-    } finally {
-      span.end();
-    }
   }
 
   /**
@@ -219,7 +182,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         }
         return this.schema.parse(storedData);
       },
-      storageManagerOtelAttributes.read(path)
+      storageManagerOtelAttributes.read(path),
     );
   }
 
@@ -244,7 +207,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
           await this.saveToFile();
         }
       },
-      storageManagerOtelAttributes.delete(path)
+      storageManagerOtelAttributes.delete(path),
     );
   }
 
@@ -270,7 +233,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
         await this.initialize();
         return path in this.data;
       },
-      storageManagerOtelAttributes.exists(path)
+      storageManagerOtelAttributes.exists(path),
     );
   }
 }

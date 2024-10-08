@@ -3,7 +3,12 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
-import { ArvoStorageTracer, exceptionToSpan, logToSpan } from '../../OpenTelemetry';
+import {
+  ArvoStorageTracer,
+  createExecutionTracer,
+  exceptionToSpan,
+  logToSpan,
+} from '../../OpenTelemetry';
 import { isLockExpired } from '../utils';
 import { lockingManagerOTelAttributes } from '../utils/otel.attributes';
 import { DefaultLockConfiguration } from '../utils/defaultLockConfiguration/types';
@@ -17,7 +22,8 @@ import { defaultLockConfiguration } from '../utils/defaultLockConfiguration';
  * @implements {ILockingManager}
  */
 export class LocalJsonLock implements ILockingManager {
-  public readonly defaultLockConfiguration: DefaultLockConfiguration = defaultLockConfiguration;
+  public readonly defaultLockConfiguration: DefaultLockConfiguration =
+    defaultLockConfiguration;
   private readonly filePath: string;
   private locks: Record<
     string,
@@ -26,51 +32,17 @@ export class LocalJsonLock implements ILockingManager {
       expiresAt: string;
     }
   > = {};
+  private executeTraced = createExecutionTracer({
+    name: 'LocalJsonLock',
+  });
 
   /**
    * Creates an instance of LocalJsonLock.
    */
   constructor(param: ILocalJsonLock) {
     this.filePath = path.resolve(param.config.filePath);
-    this.defaultLockConfiguration = param.config.defaultLockConfiguration ?? this.defaultLockConfiguration
-  }
-
-  /**
-   * Executes a function with OpenTelemetry tracing.
-   * @private
-   * @template T
-   * @param operation - The name of the operation being traced.
-   * @param action - The async function to be executed within the traced context.
-   * @param [attributes={}] - Additional attributes to be added to the span.
-   * @returns  The result of the executed action.
-   * @throws {Error} Rethrows any error that occurs during the operation, after recording it in the span.
-   */
-  private async executeTraced<T>(
-    operation: string,
-    action: () => Promise<T>,
-    attributes: Record<string, any> = {},
-  ): Promise<T> {
-    const span = ArvoStorageTracer.startSpan(`LocalJsonLock.${operation}`, {
-      attributes,
-    });
-
-    try {
-      const result = await context.with(
-        trace.setSpan(context.active(), span),
-        action,
-      );
-      span.setStatus({ code: SpanStatusCode.OK });
-      return result;
-    } catch (error) {
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: (error as Error).message,
-      });
-      exceptionToSpan(error as Error, span);
-      throw error;
-    } finally {
-      span.end();
-    }
+    this.defaultLockConfiguration =
+      param.config.defaultLockConfiguration ?? this.defaultLockConfiguration;
   }
 
   /**
@@ -236,7 +208,7 @@ export class LocalJsonLock implements ILockingManager {
       'releaseLock',
       async () => {
         await this.initialize();
-        let result = false
+        let result = false;
         if (!this.locks[path]) {
           result = true;
         } else if (lockId && this.locks[path].lockId !== lockId) {
@@ -244,10 +216,10 @@ export class LocalJsonLock implements ILockingManager {
         } else {
           delete this.locks[path];
           await this.saveToFile();
-          result = true
+          result = true;
         }
-        lockingManagerOTelAttributes.lockReleaseSuccess(result)
-        return result
+        lockingManagerOTelAttributes.lockReleaseSuccess(result);
+        return result;
       },
       lockingManagerOTelAttributes.releaseLock(path, lockId),
     );
@@ -267,7 +239,7 @@ export class LocalJsonLock implements ILockingManager {
           delete this.locks[path];
           await this.saveToFile();
         }
-        lockingManagerOTelAttributes.lockForceReleaseSuccess(true)
+        lockingManagerOTelAttributes.lockForceReleaseSuccess(true);
         return true;
       },
       lockingManagerOTelAttributes.forceReleaseLock(path),
@@ -290,9 +262,9 @@ export class LocalJsonLock implements ILockingManager {
       'extendLock',
       async () => {
         await this.initialize();
-        let result = false
+        let result = false;
         if (!this.locks[path] || this.locks[path].lockId !== lockId) {
-          result = false
+          result = false;
         } else {
           const lock = this.locks[path];
           lock.expiresAt = new Date(
@@ -301,8 +273,8 @@ export class LocalJsonLock implements ILockingManager {
           await this.saveToFile();
           result = true;
         }
-        lockingManagerOTelAttributes.lockExtensionSuccess(result)
-        return result
+        lockingManagerOTelAttributes.lockExtensionSuccess(result);
+        return result;
       },
       lockingManagerOTelAttributes.extendLock(path, lockId, duration),
     );

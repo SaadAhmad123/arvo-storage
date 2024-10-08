@@ -19,8 +19,8 @@ describe('LocalJsonLock', () => {
     testFilePath = path.join(`.test_files`, `locks.json`);
     lockManager = new LocalJsonLock({
       config: {
-        filePath: testFilePath
-      }
+        filePath: testFilePath,
+      },
     });
   });
 
@@ -122,8 +122,8 @@ describe('LocalJsonLock', () => {
     // Create a new instance with the same file
     const newLockManager = new LocalJsonLock({
       config: {
-        filePath: testFilePath
-      }
+        filePath: testFilePath,
+      },
     });
     const isLocked = await newLockManager.isLocked('test-path');
     expect(isLocked).toBe(true);

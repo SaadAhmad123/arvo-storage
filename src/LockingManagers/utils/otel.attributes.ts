@@ -1,8 +1,7 @@
 import { LockOptions } from '../types';
 
-const __resourceKey = 'arvo.lock.resource'
+const __resourceKey = 'arvo.lock.resource';
 export const lockingManagerOTelAttributes = {
-  
   acquireLock: (path: string, options?: LockOptions) => ({
     [__resourceKey]: path,
     'arvo.lock.timeout': options?.timeout,
@@ -17,8 +16,16 @@ export const lockingManagerOTelAttributes = {
   }),
   getLockInfo: (path: string) => ({ [__resourceKey]: path }),
   isLocked: (path: string) => ({ [__resourceKey]: path }),
-  lockAcquiredSuccess: (success: boolean) => ({'arvo.lock.acquire.success': success}),
-  lockReleaseSuccess: (success: boolean) => ({ 'arvo.lock.release.success': success }),
-  lockExtensionSuccess: (success: boolean) => ({'arvo.lock.timeout.extension.success': success}),
-  lockForceReleaseSuccess: (success: boolean) => ({ 'arvo.lock.release.force.success': success })
+  lockAcquiredSuccess: (success: boolean) => ({
+    'arvo.lock.acquire.success': success,
+  }),
+  lockReleaseSuccess: (success: boolean) => ({
+    'arvo.lock.release.success': success,
+  }),
+  lockExtensionSuccess: (success: boolean) => ({
+    'arvo.lock.timeout.extension.success': success,
+  }),
+  lockForceReleaseSuccess: (success: boolean) => ({
+    'arvo.lock.release.force.success': success,
+  }),
 };

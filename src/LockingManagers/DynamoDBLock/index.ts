@@ -13,6 +13,7 @@ import { IAWSResource } from '../../types';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import {
   ArvoStorageTracer,
+  createExecutionTracer,
   exceptionToSpan,
   logToSpan,
   setSpanAttributes,
@@ -23,7 +24,10 @@ import {
   unixTimestampInSecondsToDate,
 } from '../../utils';
 import { isLockExpired } from '../utils';
-import { defaultHashKey, executeDynamoDBCommandWithOTel } from '../../utils/dynamodb';
+import {
+  defaultHashKey,
+  executeDynamoDBCommandWithOTel,
+} from '../../utils/dynamodb';
 import { lockingManagerOTelAttributes } from '../utils/otel.attributes';
 import { IDynamoDBLockConfig } from './types';
 import { defaultLockConfiguration } from '../utils/defaultLockConfiguration';
@@ -39,17 +43,26 @@ export class DynamoDBLock implements ILockingManager {
   private readonly client: DynamoDBClient;
   public readonly tableName: string;
   public readonly hashKey: string = defaultHashKey;
-  public readonly defaultLockConfiguration: DefaultLockConfiguration = defaultLockConfiguration;
+  public readonly defaultLockConfiguration: DefaultLockConfiguration =
+    defaultLockConfiguration;
+
+  private executeTraced = createExecutionTracer({
+    name: 'DynamoDBLock',
+    attributes: {
+      'rpc.system': 'aws-api',
+      'rpc.service': 'DynamoDB',
+      'db.system': 'dynamodb',
+    },
+  });
 
   /**
    * Creates an instance of DynamoDBLock.
    */
-  constructor(
-    param: IAWSResource<IDynamoDBLockConfig>
-  ) {
+  constructor(param: IAWSResource<IDynamoDBLockConfig>) {
     this.tableName = param.config.tableName;
     this.hashKey = param.config.hashKey ?? this.hashKey;
-    this.defaultLockConfiguration = param.config.defaultLockConfiguration ?? this.defaultLockConfiguration
+    this.defaultLockConfiguration =
+      param.config.defaultLockConfiguration ?? this.defaultLockConfiguration;
     this.client = new DynamoDBClient({
       region: param.credentials?.awsRegion ?? 'ap-southeast-2',
       credentials: {
@@ -64,52 +77,6 @@ export class DynamoDBLock implements ILockingManager {
           : {}),
       } as any,
     });
-  }
-
-  /**
-   * Executes a function with OpenTelemetry tracing.
-   * @private
-   * @template T
-   * @param operation - The name of the operation being traced.
-   * @param action - The async function to be executed within the traced context.
-   * @param [attributes={}] - Additional attributes to be added to the span.
-   * @returns The result of the executed action.
-   * @throws {Error} Rethrows any error that occurs during the operation, after recording it in the span.
-   */
-  private async executeTraced<T>(
-    operation: string,
-    action: () => Promise<T>,
-    attributes: Record<string, any> = {},
-  ): Promise<T> {
-    const span = ArvoStorageTracer.startSpan(
-      `DynamoDBLock.${operation}`,
-      {
-        attributes: {
-          ...attributes,
-          'rpc.system': 'aws-api',
-          'rpc.service': 'DynamoDB',
-          'db.system': 'dynamodb',
-        },
-      },
-    );
-
-    try {
-      const result = await context.with(
-        trace.setSpan(context.active(), span),
-        action,
-      );
-      span.setStatus({ code: SpanStatusCode.OK });
-      return result;
-    } catch (error) {
-      span.setStatus({
-        code: SpanStatusCode.ERROR,
-        message: (error as Error).message,
-      });
-      exceptionToSpan(error as Error, span);
-      throw error;
-    } finally {
-      span.end();
-    }
   }
 
   /**
@@ -237,10 +204,14 @@ export class DynamoDBLock implements ILockingManager {
             this.client,
             new DeleteItemCommand(params),
           );
-          setSpanAttributes(lockingManagerOTelAttributes.lockReleaseSuccess(true));
+          setSpanAttributes(
+            lockingManagerOTelAttributes.lockReleaseSuccess(true),
+          );
           return true;
         } catch (error) {
-          setSpanAttributes(lockingManagerOTelAttributes.lockReleaseSuccess(false));
+          setSpanAttributes(
+            lockingManagerOTelAttributes.lockReleaseSuccess(false),
+          );
           if ((error as any).name === 'ConditionalCheckFailedException') {
             return false;
           } else {
@@ -270,10 +241,14 @@ export class DynamoDBLock implements ILockingManager {
               ReturnConsumedCapacity: 'INDEXES',
             }),
           );
-          setSpanAttributes(lockingManagerOTelAttributes.lockForceReleaseSuccess(true));
+          setSpanAttributes(
+            lockingManagerOTelAttributes.lockForceReleaseSuccess(true),
+          );
           return true;
         } catch (e) {
-          setSpanAttributes(lockingManagerOTelAttributes.lockForceReleaseSuccess(false));
+          setSpanAttributes(
+            lockingManagerOTelAttributes.lockForceReleaseSuccess(false),
+          );
           throw e;
         }
       },
@@ -329,10 +304,14 @@ export class DynamoDBLock implements ILockingManager {
             ReturnConsumedCapacity: 'INDEXES',
           });
           await executeDynamoDBCommandWithOTel(this.client, command);
-          setSpanAttributes(lockingManagerOTelAttributes.lockExtensionSuccess(true))
+          setSpanAttributes(
+            lockingManagerOTelAttributes.lockExtensionSuccess(true),
+          );
           return true;
         } catch (error) {
-          setSpanAttributes(lockingManagerOTelAttributes.lockExtensionSuccess(false));
+          setSpanAttributes(
+            lockingManagerOTelAttributes.lockExtensionSuccess(false),
+          );
           if ((error as any).name === 'ConditionalCheckFailedException') {
             // The lock was modified or released between our check and update
             return false;

@@ -1,8 +1,10 @@
-import { z } from "zod"
+import { z } from 'zod';
 
-export interface ILocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any> = z.ZodObject<any, any, any>> {
+export interface ILocalJsonStorage<
+  TDataSchema extends z.ZodObject<any, any, any> = z.ZodObject<any, any, any>,
+> {
   config: {
-    filePath: string, 
-    schema: TDataSchema
-  }
+    filePath: string;
+    schema: TDataSchema;
+  };
 }

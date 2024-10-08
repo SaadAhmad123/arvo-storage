@@ -15,7 +15,7 @@ import { IAWSResource } from './types';
 import { IDynamoDBLockConfig } from './LockingManagers/DynamoDBLock/types';
 import { ILocalJsonLock } from './LockingManagers/LocalJsonLock/types';
 import { IDynamoDBStorage } from './StorageMangers/DynamoDBStorage/types';
-import DynamoDBStorage from './StorageMangers/DynamoDBStorage'
+import DynamoDBStorage from './StorageMangers/DynamoDBStorage';
 
 export {
   ArvoStorage,
@@ -34,5 +34,5 @@ export {
   IDynamoDBLockConfig,
   ILocalJsonLock,
   IDynamoDBStorage,
-  DynamoDBStorage
+  DynamoDBStorage,
 };

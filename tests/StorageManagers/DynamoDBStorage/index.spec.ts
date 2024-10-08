@@ -1,8 +1,8 @@
-import { z } from "zod";
-import { IAWSResource, IDynamoDBStorage, DynamoDBStorage } from "../../../src";
+import { z } from 'zod';
+import { IAWSResource, IDynamoDBStorage, DynamoDBStorage } from '../../../src';
 import * as dotenv from 'dotenv';
-import { PutItemCommand } from "@aws-sdk/client-dynamodb";
-import { marshall } from "@aws-sdk/util-dynamodb";
+import { PutItemCommand } from '@aws-sdk/client-dynamodb';
+import { marshall } from '@aws-sdk/util-dynamodb';
 dotenv.config();
 
 // Define a schema for our test data
@@ -30,10 +30,10 @@ const config: IAWSResource<IDynamoDBStorage<typeof testSchema>> = {
 
 const storage = new DynamoDBStorage(config);
 
-describe("DynamoDBStorage", () => {
+describe('DynamoDBStorage', () => {
   const testData: TestData = {
-    id: "test-id-" + Date.now(),
-    name: "Test User",
+    id: 'test-id-' + Date.now(),
+    name: 'Test User',
     age: 30,
   };
 
@@ -42,62 +42,66 @@ describe("DynamoDBStorage", () => {
     await storage.delete(testData.id);
   });
 
-  test("write and read data", async () => {
+  test('write and read data', async () => {
     await storage.write(testData, testData.id);
     const readData = await storage.read(testData.id, null);
     expect(readData).toEqual(testData);
   });
 
-  test("read non-existent data", async () => {
-    const defaultValue = { id: "default", name: "Default", age: 0 };
-    const readData = await storage.read("non-existent-id", defaultValue);
+  test('read non-existent data', async () => {
+    const defaultValue = { id: 'default', name: 'Default', age: 0 };
+    const readData = await storage.read('non-existent-id', defaultValue);
     expect(readData).toEqual(defaultValue);
   }, 10000);
 
-  test("delete data", async () => {
+  test('delete data', async () => {
     await storage.write(testData, testData.id);
     await storage.delete(testData.id);
     const readData = await storage.read(testData.id, null);
     expect(readData).toBeNull();
   });
 
-  test("check existence", async () => {
+  test('check existence', async () => {
     await storage.write(testData, testData.id);
-    
+
     const exists = await storage.exists(testData.id);
     expect(exists).toBe(true);
 
-    const nonExistent = await storage.exists("non-existent-id");
+    const nonExistent = await storage.exists('non-existent-id');
     expect(nonExistent).toBe(false);
 
     // Clean up
     await storage.delete(testData.id);
   });
 
-  test("write and update data", async () => {
+  test('write and update data', async () => {
     await storage.write(testData, testData.id);
-    const updatedData = { ...testData, name: "Updated User", age: 31 };
+    const updatedData = { ...testData, name: 'Updated User', age: 31 };
     await storage.write(updatedData, testData.id);
     const readData = await storage.read(testData.id, null);
     expect(readData).toEqual(updatedData);
   });
 
-  test("write data with invalid schema", async () => {
-    const invalidData = { ...testData, age: "thirty" };
-    await expect(storage.write(invalidData as any, testData.id)).rejects.toThrow(z.ZodError);
+  test('write data with invalid schema', async () => {
+    const invalidData = { ...testData, age: 'thirty' };
+    await expect(
+      storage.write(invalidData as any, testData.id),
+    ).rejects.toThrow(z.ZodError);
   });
 
-  test("read data with invalid schema in database", async () => {
-    const invalidData = { 
+  test('read data with invalid schema in database', async () => {
+    const invalidData = {
       [storage.hashKey]: testData.id,
       name: testData.name,
-      age: "thirty" // Invalid age (should be a number)
+      age: 'thirty', // Invalid age (should be a number)
     };
-    
-    await storage["client"].send(new PutItemCommand({
-      TableName: storage.tableName,
-      Item: marshall(invalidData)
-    }));
+
+    await storage['client'].send(
+      new PutItemCommand({
+        TableName: storage.tableName,
+        Item: marshall(invalidData),
+      }),
+    );
 
     // Now try to read it, which should throw a ZodError
     await expect(storage.read(testData.id, null)).rejects.toThrow(z.ZodError);
@@ -106,20 +110,20 @@ describe("DynamoDBStorage", () => {
     await storage.delete(testData.id);
   });
 
-  test("delete non-existent data", async () => {
-    await expect(storage.delete("non-existent-id")).resolves.not.toThrow();
+  test('delete non-existent data', async () => {
+    await expect(storage.delete('non-existent-id')).resolves.not.toThrow();
   });
 
-  test("exists with recently deleted item", async () => {
+  test('exists with recently deleted item', async () => {
     await storage.write(testData, testData.id);
     await storage.delete(testData.id);
     const exists = await storage.exists(testData.id);
     expect(exists).toBe(false);
   });
 
-  test("read with custom default value", async () => {
-    const customDefault = { id: "custom", name: "Custom Default", age: 99 };
-    const readData = await storage.read("non-existent-id", customDefault);
+  test('read with custom default value', async () => {
+    const customDefault = { id: 'custom', name: 'Custom Default', age: 99 };
+    const readData = await storage.read('non-existent-id', customDefault);
     expect(readData).toEqual(customDefault);
   });
 });

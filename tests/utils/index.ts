@@ -6,7 +6,7 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import { OTLPTraceExporter as GRPCTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import * as dotenv from 'dotenv';
-import { AwsInstrumentation } from '@opentelemetry/instrumentation-aws-sdk'
+import { AwsInstrumentation } from '@opentelemetry/instrumentation-aws-sdk';
 dotenv.config();
 
 diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.INFO);
@@ -25,10 +25,7 @@ const createTelemetrySdk = () => {
   return new NodeSDK({
     resource: telemetryResources,
     traceExporter: new ConsoleSpanExporter(),
-    instrumentations: [
-      getNodeAutoInstrumentations(),
-      new AwsInstrumentation()
-    ],
+    instrumentations: [getNodeAutoInstrumentations(), new AwsInstrumentation()],
   });
 };
 
