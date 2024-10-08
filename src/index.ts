@@ -6,7 +6,6 @@ import {
   LockOptions,
   LockResult,
 } from './LockingManagers/types';
-import ArvoStorage from './ArvoStorage';
 import { LocalJsonLock } from './LockingManagers/LocalJsonLock';
 import { AWSCredentials } from './types';
 import { DynamoDBLock } from './LockingManagers/DynamoDBLock';
@@ -17,7 +16,6 @@ import { IDynamoDBStorage } from './StorageMangers/DynamoDBStorage/types';
 import DynamoDBStorage from './StorageMangers/DynamoDBStorage';
 
 export {
-  ArvoStorage,
   IStorageManager,
   ILockingManager,
   LocalJsonStorage,
