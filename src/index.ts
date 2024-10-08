@@ -6,7 +6,6 @@ import {
   LockOptions,
   LockResult,
 } from './LockingManagers/types';
-import { IArvoStorage, ArvoStorageData } from './ArvoStorage/types';
 import ArvoStorage from './ArvoStorage';
 import { LocalJsonLock } from './LockingManagers/LocalJsonLock';
 import { AWSCredentials } from './types';
@@ -21,8 +20,6 @@ export {
   ArvoStorage,
   IStorageManager,
   ILockingManager,
-  IArvoStorage,
-  ArvoStorageData,
   LocalJsonStorage,
   LocalJsonLock,
   LockInfo,

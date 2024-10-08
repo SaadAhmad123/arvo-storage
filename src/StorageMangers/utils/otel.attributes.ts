@@ -18,11 +18,7 @@ export const storageManagerOtelAttributes = {
     };
   },
   read: (path: string) => ({ [__resourceKey]: path }),
-  list: (start: number, count: number) => ({
-    'arvo.storage.data.list.query.start': start,
-    'arvo.storage.data.list.query.count': count,
-  }),
-  count: () => ({}),
   delete: (path: string) => ({ [__resourceKey]: path }),
   exists: (path: string) => ({ [__resourceKey]: path }),
+  dataFound: (success: boolean) => ({'arvo.storage.data.exists': success}),
 };

@@ -2,11 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
-import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import {
-  ArvoStorageTracer,
   createExecutionTracer,
-  exceptionToSpan,
   logToSpan,
 } from '../../OpenTelemetry';
 import { isLockExpired } from '../utils';

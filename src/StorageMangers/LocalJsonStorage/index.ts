@@ -2,11 +2,8 @@ import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
 import { IStorageManager } from '../types';
-import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import {
-  ArvoStorageTracer,
   createExecutionTracer,
-  exceptionToSpan,
   setSpanAttributes,
 } from '../../OpenTelemetry';
 import { storageManagerOtelAttributes } from '../utils/otel.attributes';
@@ -176,7 +173,7 @@ export class LocalJsonStorage<TDataSchema extends z.ZodObject<any, any, any>>
       async () => {
         await this.initialize();
         const storedData = this.data[path];
-        setSpanAttributes({ 'data.found': Boolean(storedData) });
+        setSpanAttributes(storageManagerOtelAttributes.dataFound(Boolean(storedData)))
         if (storedData === undefined) {
           return defaultValue;
         }

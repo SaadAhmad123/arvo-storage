@@ -7,13 +7,14 @@ import {
   GetItemCommand,
   PutItemCommand,
   DeleteItemCommand,
-  ScanCommand,
   QueryCommand,
+  GetItemCommandOutput,
+  QueryCommandOutput,
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
-import { defaultHashKey } from '../../utils/dynamodb';
-import { ArvoStorageTracer, createExecutionTracer, exceptionToSpan } from '../../OpenTelemetry';
-import { trace, context, SpanStatusCode } from '@opentelemetry/api';
+import { defaultHashKey, executeDynamoDBCommandWithOTel } from '../../utils/dynamodb';
+import { createExecutionTracer, setSpanAttributes } from '../../OpenTelemetry';
+import { storageManagerOtelAttributes } from '../utils/otel.attributes';
 
 /**
  * Implements the IStorageManager interface for DynamoDB storage.
@@ -78,23 +79,28 @@ export default class DynamoDBStorage<
     path: string,
     defaultValue: z.infer<TDataSchema> | null,
   ): Promise<z.infer<TDataSchema> | null> {
-    try {
-      const command = new GetItemCommand({
-        TableName: this.tableName,
-        Key: marshall({ [this.hashKey]: path }),
-      });
-
-      const { Item } = await this.client.send(command);
-
-      if (!Item) {
-        return defaultValue;
-      }
-
-      const unmarshalled = unmarshall(Item);
-      return this.schema.parse(unmarshalled);
-    } catch (error) {
-      throw error;
-    }
+    return this.executeTraced(
+      'read',
+      async () => {
+        const command = new GetItemCommand({
+          TableName: this.tableName,
+          Key: marshall({ [this.hashKey]: path }),
+        });
+  
+        const { Item } = await executeDynamoDBCommandWithOTel(
+          this.client,
+          command
+        ) as GetItemCommandOutput;
+        setSpanAttributes(storageManagerOtelAttributes.dataFound(Boolean(Item)))
+        if (!Item) {
+          return defaultValue;
+        }
+  
+        const unmarshalled = unmarshall(Item);
+        return this.schema.parse(unmarshalled);
+      },
+      storageManagerOtelAttributes.read(path)
+    )
   }
 
   /**
@@ -106,22 +112,27 @@ export default class DynamoDBStorage<
    * @throws If the write operation fails.
    */
   async write(data: z.infer<TDataSchema>, path: string): Promise<void> {
-    try {
-      const validatedData = this.schema.parse(data);
-      const item = {
-        ...validatedData,
-        [this.hashKey]: path,
-      };
+    return this.executeTraced(
+      'write',
+      async () => {
+        const validatedData = this.schema.parse(data);
+        const item = {
+          ...validatedData,
+          [this.hashKey]: path,
+        };
 
-      const command = new PutItemCommand({
-        TableName: this.tableName,
-        Item: marshall(item),
-      });
+        const command = new PutItemCommand({
+          TableName: this.tableName,
+          Item: marshall(item),
+        });
 
-      await this.client.send(command);
-    } catch (error) {
-      throw error;
-    }
+        await executeDynamoDBCommandWithOTel(
+          this.client,
+          command
+        )
+      },
+      storageManagerOtelAttributes.write(path, data)
+    )
   }
 
   /**
@@ -131,16 +142,21 @@ export default class DynamoDBStorage<
    * @throws If the delete operation fails.
    */
   async delete(path: string): Promise<void> {
-    try {
-      const command = new DeleteItemCommand({
-        TableName: this.tableName,
-        Key: marshall({ [this.hashKey]: path }),
-      });
-
-      await this.client.send(command);
-    } catch (error) {
-      throw error;
-    }
+    return this.executeTraced(
+      'delete', 
+      async () => {
+        const command = new DeleteItemCommand({
+          TableName: this.tableName,
+          Key: marshall({ [this.hashKey]: path }),
+        });
+  
+        await executeDynamoDBCommandWithOTel(
+          this.client,
+          command,
+        )
+      },
+      storageManagerOtelAttributes.delete(path)
+    )
   }
 
   /**
@@ -151,24 +167,29 @@ export default class DynamoDBStorage<
    * @throws If the existence check fails.
    */
   async exists(path: string): Promise<boolean> {
-    try {
-      const command = new QueryCommand({
-        TableName: this.tableName,
-        KeyConditionExpression: '#hashKey = :hashValue',
-        ExpressionAttributeNames: {
-          '#hashKey': this.hashKey,
-        },
-        ExpressionAttributeValues: marshall({
-          ':hashValue': path,
-        }),
-        Limit: 1,
-      });
-
-      const { Count } = await this.client.send(command);
-
-      return (Count || 0) > 0;
-    } catch (error) {
-      throw error;
-    }
+    return this.executeTraced(
+      'exists',
+      async () => {
+        const command = new QueryCommand({
+          TableName: this.tableName,
+          KeyConditionExpression: '#hashKey = :hashValue',
+          ExpressionAttributeNames: {
+            '#hashKey': this.hashKey,
+          },
+          ExpressionAttributeValues: marshall({
+            ':hashValue': path,
+          }),
+          Limit: 1,
+        });
+  
+        const { Count } = await executeDynamoDBCommandWithOTel(
+          this.client,
+          command
+        ) as QueryCommandOutput;
+  
+        return (Count || 0) > 0;
+      },
+      storageManagerOtelAttributes.exists(path)
+    )
   }
 }

@@ -10,11 +10,8 @@ import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { v4 as uuidv4 } from 'uuid';
 import { ILockingManager, LockOptions, LockResult, LockInfo } from '../types';
 import { IAWSResource } from '../../types';
-import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import {
-  ArvoStorageTracer,
   createExecutionTracer,
-  exceptionToSpan,
   logToSpan,
   setSpanAttributes,
 } from '../../OpenTelemetry';
